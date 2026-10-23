@@ -8,12 +8,13 @@ import { ActivityFeed } from "../components/ActivityFeed.js";
 import { Markdown } from "../components/Markdown.js";
 import { AiChat } from "../components/AiChat.js";
 import { LiveTerminal } from "../components/LiveTerminal.js";
+import { PromptEditor } from "../components/PromptEditor.js";
 import { formatDuration, interactiveTerminalId, stepDuration, type ActivityLine } from "../lib/activity.js";
 import { groupColor, groupLabel, groupOf } from "../lib/groups.js";
 import { DocumentImportPanel, FigmaHandoffPanel } from "../components/StepInputs.js";
 import { StepResultView, VerdictCard, readableResult, type VerdictView } from "../components/StepResults.js";
 
-const TABS = ["Activity", "Result", "Files", "Tests", "Evidence", "AI chat"] as const;
+const TABS = ["Activity", "Prompt", "Result", "Files", "Tests", "Evidence", "AI chat"] as const;
 type Tab = (typeof TABS)[number];
 
 export function StepDetail({
@@ -87,7 +88,7 @@ export function StepDetail({
   const spec = visualStateForNode(nodeRun?.status);
   const duration = stepDuration(nodeRun, now);
   const canRetry = nodeRun && ["failed", "blocked", "cancelled"].includes(nodeRun.status);
-  const isGapGate = node.type === "readiness.map" || node.type === "tests.design";
+  const isGapGate = node.type === "readiness.review" || node.type === "tests.design";
 
   return (
     <section className="ff-detail" aria-label={`Step ${node.label}`}>
@@ -151,7 +152,7 @@ export function StepDetail({
       ) : null}
 
       <div className="ff-tabs ff-tabs-flush" role="tablist">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t !== "Prompt" || node.ai).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className={`ff-tab${tab === t ? " ff-tab-active" : ""}`} onClick={() => setTab(t)}>
             {t}
             {t === "Result" && verdict ? <span className="ff-count">{verdict.score}%</span> : null}
@@ -163,6 +164,7 @@ export function StepDetail({
 
       <div className="ff-detail-body">
         {tab === "Activity" && <ActivityFeed lines={lines} showStep={false} defaultVerbose emptyText={nodeRun ? "No activity yet." : "This step has not started yet."} />}
+        {tab === "Prompt" && node.ai ? <PromptEditor nodeId={node.id} label={node.label} /> : null}
         {tab === "Result" && <ResultView value={nodeRun?.output} verdict={verdict} />}
         {tab === "Files" && (
           <div className="ff-pad">

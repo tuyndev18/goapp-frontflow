@@ -10,39 +10,6 @@ import type { AcceptanceCriterion } from "@frontflow/document-parser";
  * of trusted (spec §3 "Explicit uncertainty").
  */
 
-export const API_EXTRACTION_FILE = "api-operations.json";
-export const BA_EXTRACTION_FILE = "ba-scenarios.json";
-
-export const API_EXTRACTION_SCHEMA = `{
-  "operations": [{
-    "id": string,              // operationId if present, else a stable camelCase name
-    "method": "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"WS",
-    "path": string,            // e.g. "/api/v1/host/tournaments/{id}"; for WebSocket use the opcode, e.g. "ws:1165"
-    "summary": string,
-    "auth": string | null,
-    "roles": string[],
-    "parameters": [{ "name": string, "in": "path"|"query"|"header"|"body", "type": string | null, "required": boolean }],
-    "responses": [{ "status": number, "errorCode": string | null, "description": string | null }],
-    "lines": [start, end]      // 1-based line range in the contract file
-  }]
-}`;
-
-export const BA_EXTRACTION_SCHEMA = `{
-  "actors": string[],
-  "requirements": [{
-    "id": string,              // the id used in the document (e.g. "UC-01", "BA-ORDER-001"); invent "REQ-001"… only if the document has none
-    "title": string,
-    "actor": string | null,
-    "preconditions": string[], "actions": string[], "outcomes": string[],
-    "validations": string[],   // business rules / constraints, keep their ids (e.g. "BR-26: …")
-    "states": string[],        // domain states mentioned (e.g. "PENDING", "Đang diễn ra")
-    "errors": string[],        // error codes or named error cases
-    "acceptanceCriteria": [{ "given": string[], "when": string[], "then": string[] }],
-    "lines": [start, end],     // 1-based line range in ba.md where it is defined
-    "confidence": number       // 0..1, lower when you had to interpret
-  }]
-}`;
-
 export interface DocumentText {
   snapshot: SourceSnapshot;
   text: string;

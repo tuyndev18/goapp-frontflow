@@ -4,6 +4,7 @@ import { StatusBadge, visualStateForNode, visualStateForRun } from "@frontflow/u
 import type { EventDto, GraphNodeDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+import { Loading } from "../components/Loading.js";
 import { ActivityFeed } from "../components/ActivityFeed.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { TmuxView } from "../components/TmuxView.js";
@@ -48,7 +49,7 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
   const active = !!state && !TERMINAL.has(state.run.status);
   const now = useNow(active);
 
-  if (!state) return <div className="ff-screen">Loading run…</div>;
+  if (!state) return <Loading label="Loading run" screen />;
   const nodes = state.graph.nodes;
   const done = nodes.filter((n) => ["passed", "skipped"].includes(latest.get(n.id)?.status ?? "")).length;
   const started = state.run.startedAt ?? state.run.createdAt;
@@ -119,7 +120,7 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
       </header>
       <ProgressBar nodes={nodes} latest={latest} />
 
-      {needsInput.length && !selected ? (
+      {needsInput.length && !selectedNode ? (
         <div className="ff-callout ff-callout-warning" role="alert">
           <strong>⏸ Waiting for you:</strong>{" "}
           {needsInput.map((n) => (

@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { SkillDto, SkillNodeDto, SkillsStateDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+import { Loading } from "../components/Loading.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { Markdown } from "../components/Markdown.js";
 import { groupColor, groupLabel } from "../lib/groups.js";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -47,6 +49,7 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
   const [pendingOpen, setPendingOpen] = useState<string | null>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [filter, setFilter] = useState("");
+  const [bodyView, setBodyView] = useState<"edit" | "preview">("edit");
 
   async function refresh() {
     try {
@@ -167,7 +170,7 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
     }
   }
 
-  if (!state) return <div className="ff-screen">Loading…</div>;
+  if (!state) return <Loading label="Loading skills" screen />;
   const nameError = draft.name && !NAME_PATTERN.test(draft.name.trim()) ? "Lowercase letters, digits and hyphens only (max 64)." : undefined;
   const canSave = dirty && !busy && !nameError && draft.name.trim() && draft.description.trim() && draft.body.trim();
 
@@ -336,17 +339,33 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
                   required
                 />
               </label>
-              <label className="ff-field">
-                <span>Instructions (Markdown)</span>
-                <textarea
-                  className="ff-input ff-mono ff-skill-body"
-                  rows={22}
-                  spellCheck={false}
-                  value={draft.body}
-                  onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                  required
-                />
-              </label>
+              <div className="ff-field">
+                <div className="ff-skill-body-bar">
+                  <span>Instructions (Markdown)</span>
+                  <div className="ff-seg" role="tablist" aria-label="Instructions view">
+                    {(["edit", "preview"] as const).map((v) => (
+                      <button key={v} type="button" role="tab" aria-selected={bodyView === v} className={`ff-seg-btn${bodyView === v ? " ff-seg-active" : ""}`} onClick={() => setBodyView(v)}>
+                        {v === "edit" ? "Edit" : "Preview"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {bodyView === "edit" ? (
+                  <textarea
+                    className="ff-input ff-mono ff-skill-body"
+                    aria-label="Instructions (Markdown)"
+                    rows={22}
+                    spellCheck={false}
+                    value={draft.body}
+                    onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+                    required
+                  />
+                ) : draft.body.trim() ? (
+                  <Markdown source={draft.body} className="ff-skill-preview" />
+                ) : (
+                  <p className="ff-muted">Nothing to preview yet.</p>
+                )}
+              </div>
 
               {original ? (
                 <fieldset className="ff-skill-steps">

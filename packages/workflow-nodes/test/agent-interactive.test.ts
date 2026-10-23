@@ -67,13 +67,32 @@ function setup(terminals: TerminalBackend) {
   const services = {
     terminals,
     agents: { start: () => Promise.reject(new Error("headless must not run")), resume: () => Promise.reject(new Error("no")), cancel: async () => undefined, subscribeAll: () => () => undefined },
-    settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 1000, agentTimeoutMs: 20_000, fixBudget: 1, interactiveAgents: true }),
+    settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 1000, agentTimeoutMs: 20_000, fixBudget: 1 }),
     mcpConfigDir: path.join(root, "mcp"),
   } as unknown as NodeServices;
   return { ctx, services, cwd, emitted, logs };
 }
 
 describe("interactive Claude steps", () => {
+  it("never runs a real CLI headless", async () => {
+    const { ctx, services, cwd } = setup(undefined as unknown as TerminalBackend);
+    await expect(runAgentStep(ctx, { ...services, terminals: undefined } as NodeServices, { projectId: "p1", adapterId: "claude-code", cwd, prompt: "x", readOnly: true })).rejects.toMatchObject({ code: "HEADLESS_DISABLED" });
+    await expect(runAgentStep(ctx, services, { projectId: "p1", adapterId: "codex", cwd, prompt: "x", readOnly: true })).rejects.toMatchObject({ code: "HEADLESS_DISABLED" });
+  });
+
+  it("passes the run's model and effort to Claude Code", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "ff-claude-"));
+    const { backend, opened } = fakeTerminals(configDir, (write, exit) => {
+      write({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "ok" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } } });
+      exit(0);
+    });
+    const { ctx, services, cwd } = setup(backend);
+    await runAgentStep(ctx, services, { projectId: "p1", adapterId: "claude-code", cwd, prompt: "x", readOnly: true, model: "opus", effort: "high" });
+    const args = opened[0]!.args!;
+    expect(args[args.indexOf("--model") + 1]).toBe("opus");
+    expect(args[args.indexOf("--effort") + 1]).toBe("high");
+  });
+
   it("runs the TUI in a terminal, follows the transcript and completes when Claude ends its turn", async () => {
     const configDir = mkdtempSync(path.join(tmpdir(), "ff-claude-"));
     let cwdSeen = "";

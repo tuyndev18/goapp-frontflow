@@ -9,7 +9,6 @@ const DEFAULTS: SettingsDto = {
   maxConcurrentNodes: 2,
   retentionDays: 30,
   allowArbitraryShell: false,
-  interactiveAgents: true,
   goFigmaServerPath: "",
 };
 
@@ -25,6 +24,8 @@ export class SettingsStore {
         const stored = JSON.parse(readFileSync(this.file, "utf8")) as Partial<SettingsDto> & { workspace?: unknown };
         // Older versions could run AI steps in a separate git worktree; agents now always work in the project folder.
         delete stored.workspace;
+        // Claude steps always run as interactive (tmux-style) sessions now; the headless option is gone.
+        delete (stored as { interactiveAgents?: unknown }).interactiveAgents;
         this.value = { ...DEFAULTS, ...stored };
       } catch {
         // Corrupt settings fall back to defaults rather than blocking startup.

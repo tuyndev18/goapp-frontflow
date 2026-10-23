@@ -3,6 +3,7 @@ import type { ReadinessStatus } from "@frontflow/domain";
 import type { TraceabilityDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+import { Loading } from "../components/Loading.js";
 import { Markdown } from "../components/Markdown.js";
 
 const STATUS_ICON: Record<ReadinessStatus, string> = {
@@ -65,7 +66,7 @@ export function TraceabilityMatrix({ projectId, runId }: { projectId: string; ru
           {tab("report", "Gap reports")}
         </div>
       </header>
-      {data === undefined ? <p>Loading…</p> : null}
+      {data === undefined ? <Loading label="Loading traceability" /> : null}
 
       {data && view === "ui" ? (
         pkg ? (

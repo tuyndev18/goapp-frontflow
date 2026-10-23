@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   buildClaudeInteractiveArgs,
   claudeProjectSettingsProblems,
@@ -34,6 +35,11 @@ export interface AgentStepInput {
   filesOnly?: boolean;
   /** `cwd` is the user's own project folder: an interactive session loads its .claude settings like a normal `claude` there. */
   projectSettings?: boolean;
+  /** Claude Code runs as this saved account (FeatureRunInputs.claudeAccountId). */
+  claudeAccountId?: string;
+  /** The run's model and reasoning effort (FeatureRunInputs.model / effort). */
+  model?: string;
+  effort?: string;
 }
 
 const FILE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"];
@@ -66,6 +72,10 @@ interface SessionOptions {
   timeoutMs: number;
   env: Record<string, string>;
   projectSettings?: boolean;
+  /** Claude Code's config folder for this session (a saved account's profile), else the machine's. */
+  configDir?: string;
+  model?: string;
+  effort?: string;
 }
 
 interface SessionOutcome {
@@ -76,18 +86,39 @@ interface SessionOutcome {
 }
 
 /**
+ * Claude Code gives every session its own scratchpad for temporary files
+ * (`<tmp>/claude/<project>/<session>/scratchpad/…`) and tells the model to use it,
+ * so a write there is not a write outside the step's folder.
+ */
+export function isClaudeScratchpad(file: string, tmpRoot: string = tmpdir()): boolean {
+  const root = join(tmpRoot, "claude");
+  if (!isPathInside(file, root)) return false;
+  const parts = relative(root, resolve(file)).split(/[\\/]/);
+  return parts.length > 3 && parts[2]?.toLowerCase() === "scratchpad";
+}
+
+/**
  * Runs one AI CLI turn for a workflow node and waits for it to finish.
  * Events are forwarded to the engine so the node inspector shows them, file
  * writes outside the step's root are reported as policy violations, and the
  * Figma MCP config written for the step is removed afterwards.
  *
- * Claude Code steps run either headless (`claude -p`, stream-json) or, when the
- * host enables it, as a real interactive session in a PTY that the user can
- * watch and answer in the AI terminals view.
+ * Claude Code steps always run as a real interactive session in a runner PTY
+ * (a tmux-style pane the user can watch and answer in the AI terminals view). Headless runs
+ * (`claude -p`, other CLIs) are not allowed: only the `fake` test adapter runs headless.
  */
 export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServices, input: AgentStepInput): Promise<AgentStepResult> {
   const settings = services.settings();
-  const interactive = settings.interactiveAgents === true && input.adapterId === "claude-code" && services.terminals !== undefined;
+  const interactive = input.adapterId === "claude-code" && services.terminals !== undefined;
+  if (!interactive && input.adapterId !== "fake") {
+    throw new NodeError(
+      "HEADLESS_DISABLED",
+      input.adapterId === "claude-code"
+        ? "AI steps run only as an interactive Claude Code session in a terminal, and no terminal is available"
+        : `AI steps run only with Claude Code in an interactive terminal session, not ${input.adapterId}`,
+      { retryable: false },
+    );
+  }
   const modes = PERMISSION_MODES[input.adapterId] ?? {};
   // Interactive sessions use Claude's auto mode: its safety classifier approves routine commands so
   // the user is not asked about every `find` or `npm run build`, and still stops risky ones. (Plan
@@ -97,6 +128,14 @@ export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServ
 
   let mcpConfigPath: string | undefined;
   const env: Record<string, string> = {};
+  let configDir: string | undefined;
+  if (input.adapterId === "claude-code" && input.claudeAccountId && services.claudeProfileFor) {
+    configDir = await services.claudeProfileFor(input.claudeAccountId);
+    if (configDir) {
+      env["CLAUDE_CONFIG_DIR"] = configDir;
+      ctx.log("info", "Claude Code runs as the account chosen for this run, from its own config folder");
+    }
+  }
   const serverPath = input.withFigma ? services.figma?.serverPath() : undefined;
   if (input.withFigma && !serverPath) {
     ctx.log("warn", "GoApp Figma MCP server not found (Settings → GoApp Figma); the AI only gets it if its own config has goapp-figma");
@@ -130,6 +169,10 @@ export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServ
     prompt,
     timeoutMs: settings.agentTimeoutMs,
     env,
+    ...(configDir ? { configDir } : {}),
+    ...(input.model ? { model: input.model } : {}),
+    // `--effort` is Claude Code's; other CLIs keep their own setting.
+    ...(input.effort && (input.adapterId === "claude-code" || input.adapterId === "fake") ? { effort: input.effort } : {}),
     ...(input.projectSettings ? { projectSettings: true } : {}),
     ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
     ...(permissionMode ? { permissionMode } : {}),
@@ -151,11 +194,14 @@ export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServ
       throw new NodeError(code, `AI CLI session failed: ${end.payload.message}`, { retryable: end.payload.code !== "CANCELLED" });
     }
 
-    const filesChanged = [
+    const written = [
       ...new Set(
         events.flatMap((e) => (e.type === "file.changed" ? [isAbsolute(e.payload.path) ? e.payload.path : resolve(input.cwd, e.payload.path)] : [])),
       ),
     ];
+    const scratch = written.filter((f) => !isPathInside(f, input.cwd) && isClaudeScratchpad(f));
+    if (scratch.length) ctx.log("info", `AI wrote temporary files in its Claude Code scratchpad (outside the project): ${scratch.join(", ")}`);
+    const filesChanged = written.filter((f) => !scratch.includes(f));
     const outside = filesChanged.filter((f) => !isPathInside(f, input.cwd));
     if (outside.length) {
       throw new NodeError("PERMISSION_DENIED", `AI CLI wrote outside its working folder: ${outside.join(", ")}`);
@@ -240,6 +286,8 @@ async function runHeadlessSession(ctx: NodeExecutionContext, agents: AgentBacken
       nodeRunId: ctx.nodeRunId,
       timeoutMs: options.timeoutMs,
       env: options.env,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.effort ? { effort: options.effort } : {}),
       ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
       ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
       ...(options.mcpConfigPath ? { mcpConfigPath: options.mcpConfigPath } : {}),
@@ -293,6 +341,8 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
       prompt: `Your task is in ${taskFile}. Read the whole file, then carry it out.`,
       sessionId: externalSessionId,
       ...(settingSources ? { settingSources } : {}),
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.effort ? { effort: options.effort } : {}),
       ...(systemFile ? { systemPromptFile: systemFile } : {}),
       ...(options.mcpConfigPath ? { mcpConfigPath: options.mcpConfigPath } : {}),
       ...(options.permissionMode ? { permissionMode: options.permissionMode } : {}),
@@ -333,7 +383,7 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
   let stallWarned = false;
   const poll = () => {
     if (done) return;
-    transcript ??= findClaudeTranscript(terminals.claudeConfigDir, options.cwd, externalSessionId);
+    transcript ??= findClaudeTranscript(options.configDir ?? terminals.claudeConfigDir, options.cwd, externalSessionId);
     if (!transcript) {
       // No transcript yet = Claude has not taken the task: it is waiting on a startup question.
       if (!stallWarned && Date.now() - startedAt > STALL_MS) {

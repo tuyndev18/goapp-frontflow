@@ -155,31 +155,6 @@ export class AiSessionRepository {
       .run({ id, at });
   }
 
-  /** Renames and/or merges metadata keys. Returns false for an unknown session. */
-  patch(id: string, patch: { title?: string; metadata?: Record<string, unknown> }): boolean {
-    const current = this.get(id);
-    if (!current) return false;
-    this.save({
-      ...current,
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.metadata ? { metadata: { ...current.metadata, ...patch.metadata } } : {}),
-    });
-    return true;
-  }
-
-  /** Deletes the record; its standalone events and usage rows go with it (trigger). */
-  delete(id: string): boolean {
-    return Number(this.db.prepare("DELETE FROM ai_sessions WHERE id = @id").run({ id }).changes) > 0;
-  }
-
-  /** Sessions not ended yet, in every project. */
-  listOpen(): AiSessionRecord[] {
-    return this.db
-      .prepare("SELECT * FROM ai_sessions WHERE status NOT IN ('completed', 'failed', 'cancelled') ORDER BY started_at, rowid")
-      .all()
-      .map(toSession);
-  }
-
   /** Newest first. */
   listByProject(projectId: string, limit = -1): AiSessionRecord[] {
     return this.db

@@ -1,19 +1,20 @@
 # Workflow B — UI Implementation & API Integration.
 # FrontFlow is a wrapper that drives AI agents (tmux/terminal sessions) in the opened project
-# folder: no worktree, no branch. Checkpoints are hidden git snapshots used for review/rollback.
+# folder: no worktree, no branch. The agents read the project themselves, so there is no
+# "analyze project" step. Every AI step is an editable prompt (workflows/prompts/<step id>.md);
+# each code-changing step is bracketed by hidden git snapshots used for review/rollback.
 #
 # B1 starts the run: the UI is built from Figma first, because the API contract is often not
-# ready yet. B2 starts once the contract has been reviewed against that UI (A.readiness).
-# Each AI step's "validate → fix" loop is its retry budget: the handler runs its gates and fails
-# with VALIDATION_FAILED so the next attempt fixes it. B2.quality_gates owns the final bounded
-# "AI diagnoses and fixes → re-test" loop and ends blocked with evidence when the budget is spent.
+# ready yet. B2 starts once the contract has been reviewed against that UI (A.review).
+# FrontFlow runs no build/typecheck/lint gates: an AI step passes once its agent session ends,
+# and only agent failures (session, timeout) are retried.
 # B2.check_backend runs provider verification when the runtime API is reachable; otherwise the
 # feature is contract-only (never reported as runtime verified, spec §13.6).
 id: ui-implementation
-version: 4
+version: 6
 name: UI Implementation & API Integration
-description: Build the presentational UI from Figma first, then bind the API once its contract is reviewed, add loading/empty/error/permission states and pass the implementation gates.
-requires: [A.readiness]
+description: Build the presentational UI from Figma first, then bind the API once its contract is reviewed and add loading/empty/error/permission states.
+requires: [A.review]
 defaults:
   timeoutMs: 600000
   retryPolicy:
@@ -34,20 +35,12 @@ nodes:
       baseDelayMs: 2000
       retryableErrors: [FIGMA_UNAVAILABLE, NETWORK_ERROR]
 
-  - id: B1.prepare_project
-    type: project.prepare
-    label: Analyze project & checkpoint
-    group: B1
-    description: Detect stack, commands and conventions, then record a baseline checkpoint (hidden git snapshot) of the project folder the AI agents work in.
-    mutation: true
-    timeoutMs: 180000
-
   - id: B1.implement_ui
     type: ai.implement_ui
     label: AI implements UI
     group: B1
-    description: Plan and implement the presentational UI from Figma with mock data (no API yet); build, typecheck, lint and accessibility checks.
-    dependencies: [B1.figma_scope, B1.prepare_project]
+    description: The agent runs the editable prompt to implement the presentational UI from Figma with mock data (no API yet).
+    dependencies: [B1.figma_scope]
     config:
       ai: true
     mutation: true
@@ -56,14 +49,14 @@ nodes:
       maxAttempts: 3
       backoff: exponential
       baseDelayMs: 5000
-      retryableErrors: [VALIDATION_FAILED, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
 
   - id: B2.api_binding
     type: ai.api_integration
     label: AI binds API
     group: B2
     description: API client (existing pattern first) and query/mutation bindings for every mapped interaction of the built UI, with consumer contract tests.
-    dependencies: [A.readiness, B1.implement_ui]
+    dependencies: [A.review, B1.implement_ui]
     config:
       ai: true
     mutation: true
@@ -72,7 +65,7 @@ nodes:
       maxAttempts: 3
       backoff: exponential
       baseDelayMs: 5000
-      retryableErrors: [VALIDATION_FAILED, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
 
   - id: B2.check_backend
     type: integration.check_backend
@@ -101,15 +94,4 @@ nodes:
       maxAttempts: 3
       backoff: exponential
       baseDelayMs: 5000
-      retryableErrors: [VALIDATION_FAILED, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
-
-  - id: B2.quality_gates
-    type: test.quality_gates
-    label: Implementation gates
-    group: B2
-    description: Component, contract and integration tests plus build, typecheck, lint, visual and accessibility checks; failures go to a bounded AI fix loop, then blocked with evidence.
-    dependencies: [B2.ui_states]
-    config:
-      ai: true
-    mutation: true
-    timeoutMs: 3600000
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]

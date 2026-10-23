@@ -223,6 +223,8 @@ export function buildClaudeInteractiveArgs(input: {
   prompt: string;
   sessionId: string;
   model?: string;
+  /** low | medium | high | xhigh | max */
+  effort?: string;
   systemPromptFile?: string;
   mcpConfigPath?: string;
   allowedTools?: string[];
@@ -234,6 +236,7 @@ export function buildClaudeInteractiveArgs(input: {
   const args = [input.prompt, "--session-id", input.sessionId];
   if (input.settingSources) args.push("--setting-sources", input.settingSources);
   if (input.model) args.push("--model", input.model);
+  if (input.effort) args.push("--effort", input.effort);
   if (input.mcpConfigPath) args.push("--mcp-config", input.mcpConfigPath);
   if (input.systemPromptFile) args.push("--append-system-prompt-file", input.systemPromptFile);
   if (input.permissionMode) args.push("--permission-mode", input.permissionMode);
@@ -301,6 +304,7 @@ export function claudeProjectSettingsProblems(cwd: string): ClaudeSettingsProble
 /** Builds the headless streaming argv. Prompts go over stdin, secrets via env. */
 export function buildClaudeArgs(input: {
   model?: string;
+  effort?: string;
   systemPrompt?: string;
   mcpConfigPath?: string;
   allowedTools?: string[];
@@ -311,6 +315,7 @@ export function buildClaudeArgs(input: {
   const args = ["-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"];
   if (input.resumeId) args.push("--resume", input.resumeId);
   if (input.model) args.push("--model", input.model);
+  if (input.effort) args.push("--effort", input.effort);
   if (input.mcpConfigPath) args.push("--mcp-config", input.mcpConfigPath);
   if (input.systemPrompt) args.push("--append-system-prompt", input.systemPrompt);
   if (input.allowedTools && input.allowedTools.length > 0) args.push("--allowedTools", input.allowedTools.join(","));
@@ -368,6 +373,7 @@ export class ClaudeCodeAdapter extends ProcessCliAdapter<ClaudeParseState> {
     const resumeId = "externalSessionId" in input ? input.externalSessionId : undefined;
     const args = buildClaudeArgs({
       ...(input.model ? { model: input.model } : {}),
+      ...(input.effort ? { effort: input.effort } : {}),
       ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
       ...(input.mcpConfigPath ? { mcpConfigPath: input.mcpConfigPath } : {}),
       ...(input.allowedTools ? { allowedTools: input.allowedTools } : {}),

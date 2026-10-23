@@ -6,6 +6,16 @@ export function runInputs(input: NodeInput): FeatureRunInputs {
   return input.inputs as unknown as FeatureRunInputs;
 }
 
+/** What the run chose for its AI steps: the saved Claude account, the model and the effort. */
+export function claudeAccountOf(input: NodeInput): { claudeAccountId?: string; model?: string; effort?: string } {
+  const { claudeAccountId, model, effort } = runInputs(input);
+  return {
+    ...(typeof claudeAccountId === "string" && claudeAccountId ? { claudeAccountId } : {}),
+    ...(typeof model === "string" && model ? { model } : {}),
+    ...(typeof effort === "string" && effort ? { effort } : {}),
+  };
+}
+
 export function upstream<T>(input: NodeInput, nodeId: string): T {
   const value = input.upstream[nodeId];
   if (value === undefined) throw new NodeError("MISSING_UPSTREAM", `Output of ${nodeId} is not available`, { retryable: false });
@@ -20,10 +30,9 @@ export async function projectOf(ctx: NodeExecutionContext, services: NodeService
   return services.getProject(ctx.projectId);
 }
 
-/** Latest profile: the one produced by B1.prepare_project in this run, else the stored one. */
-export async function profileOf(ctx: NodeExecutionContext, services: NodeServices, input: NodeInput): Promise<ProjectProfile | undefined> {
-  const fromRun = optionalUpstream<{ profile: ProjectProfile }>(input, "B1.prepare_project");
-  return fromRun?.profile ?? (await projectOf(ctx, services)).profile;
+/** The project profile detected when the project was opened (commands for the gates). */
+export async function profileOf(ctx: NodeExecutionContext, services: NodeServices, _input?: NodeInput): Promise<ProjectProfile | undefined> {
+  return (await projectOf(ctx, services)).profile;
 }
 
 export function knownScripts(profile: ProjectProfile | undefined): string[] {
@@ -58,19 +67,24 @@ export function json(value: unknown): string {
 }
 
 /**
- * The project folder the AI agents work in, as B1.prepare_project found it. FrontFlow only drives
- * the agents there; checkpoints are hidden git snapshots, never branches or worktrees.
+ * The project folder the AI agents work in. FrontFlow only drives the agents there; checkpoints
+ * are hidden git snapshots, never branches or worktrees.
  */
 export interface WorkspaceOutput {
   projectPath: string;
-  branch: string;
+  /** HEAD when the run was created. */
   baseSha: string;
-  checkpointId: string;
-  checkpointSha: string;
 }
 
-export function workspaceOf(input: NodeInput): WorkspaceOutput {
-  return upstream<{ workspace: WorkspaceOutput }>(input, "B1.prepare_project").workspace;
+export async function workspaceOf(ctx: NodeExecutionContext, services: NodeServices, input: NodeInput): Promise<WorkspaceOutput> {
+  const { rootPath } = await projectOf(ctx, services);
+  const baseSha = runInputs(input).gitBaseSha;
+  return { projectPath: rootPath, baseSha: typeof baseSha === "string" ? baseSha : "" };
+}
+
+/** The feature's name, as typed when it was created. */
+export function featureOf(input: NodeInput): string {
+  return runInputs(input).title ?? "this feature";
 }
 
 export function plural(count: number, word: string): string {

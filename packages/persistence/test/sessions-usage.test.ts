@@ -47,7 +47,7 @@ const event = (id: string, sessionId: string, workflowRunId: string, timestamp: 
   payload: { role: "assistant", text: id },
 });
 
-describe("standalone sessions, events and usage", () => {
+describe("session activity and usage", () => {
   let db: FrontflowDb;
   beforeEach(() => {
     db = openDatabase(":memory:");
@@ -55,35 +55,17 @@ describe("standalone sessions, events and usage", () => {
   });
   afterEach(() => db.close());
 
-  it("stores events of sessions outside any run and lists them with run events by session", () => {
-    seedProjectAndRun(db);
+  it("touches activity forward only", () => {
     db.aiSessions.save(session("sess_a"));
-    db.runStore.appendEvent(event("e1", "sess_a", "adhoc_synthetic", "2026-10-20T10:00:01.000Z"), { runless: true });
-    db.runStore.appendEvent(event("e2", "sess_b", "run_1", "2026-10-20T10:00:02.000Z"));
-    const listed = db.runStore.listSessionEvents(["sess_a", "sess_b"]);
-    expect(listed.map((e) => [e.id, e.workflowRunId])).toEqual([
-      ["e1", ""],
-      ["e2", "run_1"],
-    ]);
-    // A runless event is never attributed to a run.
-    expect(db.runStore.listEvents("adhoc_synthetic")).toEqual([]);
-  });
-
-  it("touches activity forward only, patches metadata and title, deletes with events and usage", () => {
-    db.aiSessions.save(session("sess_a", { metadata: { kind: "chat" } }));
     db.aiSessions.touch("sess_a", "2026-10-20T10:05:00.000Z");
     db.aiSessions.touch("sess_a", "2026-10-20T10:01:00.000Z");
     expect(db.aiSessions.get("sess_a")?.lastActivityAt).toBe("2026-10-20T10:05:00.000Z");
+  });
 
-    expect(db.aiSessions.patch("sess_a", { title: "Login form", metadata: { rootSessionId: "sess_root" } })).toBe(true);
-    expect(db.aiSessions.get("sess_a")).toMatchObject({ title: "Login form", metadata: { kind: "chat", rootSessionId: "sess_root" } });
-    expect(db.aiSessions.patch("missing", { title: "x" })).toBe(false);
-
-    db.runStore.appendEvent(event("e1", "sess_a", "adhoc_1", "2026-10-20T10:00:01.000Z"), { runless: true });
+  it("drops a deleted session's usage rows", () => {
+    db.aiSessions.save(session("sess_a"));
     db.usage.record(usage("u1"));
-    expect(db.aiSessions.listOpen().map((s) => s.id)).toEqual(["sess_a"]);
-    expect(db.aiSessions.delete("sess_a")).toBe(true);
-    expect(db.runStore.listSessionEvents(["sess_a"])).toEqual([]);
+    db.driver.prepare("DELETE FROM ai_sessions WHERE id = 'sess_a'").run();
     expect(db.usage.bySession("proj_1").size).toBe(0);
   });
 
@@ -118,7 +100,7 @@ describe("migration 2 on an existing database", () => {
   beforeEach(() => (tmp = makeTempDir()));
   afterEach(() => tmp.cleanup());
 
-  it("keeps v1 agent events and sessions, and makes the run optional", () => {
+  it("keeps v1 agent events and sessions through the agent_events rebuild", () => {
     const file = join(tmp.dir, "database.sqlite");
     const v1 = openDatabase(file, { migrations: MIGRATIONS.filter((m) => m.version === 1) });
     try {
@@ -140,14 +122,13 @@ describe("migration 2 on an existing database", () => {
       expect(db.schemaVersion).toBe(MIGRATIONS.at(-1)!.version);
       expect(db.runStore.listEvents("run_1").map((e) => e.id)).toEqual(["e_old"]);
       expect(db.aiSessions.get("sess_old")).toMatchObject({ workflowRunId: "run_1" });
-      db.runStore.appendEvent(event("e_new", "sess_new", "adhoc_1", "2026-10-02T10:00:00.000Z"), { runless: true });
+      db.runStore.appendEvent(event("e_new", "sess_old", "run_1", "2026-10-02T10:00:00.000Z"));
       // Sequence keeps growing after the table rebuild.
-      const [oldSeq, newSeq] = db.runStore.listSessionEvents(["sess_old", "sess_new"]).map((e) => e.seq);
+      const [oldSeq, newSeq] = db.runStore.listEvents("run_1").map((e) => e.seq);
       expect(newSeq!).toBeGreaterThan(oldSeq!);
       // Run events still go with their run.
       db.runStore.deleteRun("run_1");
-      expect(db.runStore.listSessionEvents(["sess_old"])).toEqual([]);
-      expect(db.runStore.listSessionEvents(["sess_new"])).toHaveLength(1);
+      expect(db.runStore.listEvents("run_1")).toEqual([]);
     } finally {
       db.close();
     }

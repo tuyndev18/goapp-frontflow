@@ -182,30 +182,36 @@ describe("built-in workflows", () => {
   it("loads and composes the three workflow files", () => {
     const def = loadBuiltinWorkflows(WORKFLOWS_DIR);
     expect(def.id).toBe("feature-delivery");
-    expect(def.version).toBe(3);
-    expect(def.nodes).toHaveLength(4 + 6 + 5);
+    expect(def.version).toBe(6);
+    expect(def.nodes).toHaveLength(5 + 2 + 5);
     const groups = new Set(def.nodes.map((n) => n.group));
-    expect(groups).toEqual(new Set(["A", "B", "C1", "C2"]));
+    expect(groups).toEqual(new Set(["B1", "A", "B2", "C1", "C2"]));
     for (const node of def.nodes) expect(node.id.startsWith(`${node.group}.`)).toBe(true);
 
     const byId = new Map(def.nodes.map((n) => [n.id, n]));
-    // A: Figma and the API contract are read in parallel and decide readiness; the BA is not an input.
-    expect(byId.get("A.figma_scope")?.dependencies).toEqual([]);
+    // B1: the UI is built from Figma first; it needs no API contract.
+    expect(byId.get("B1.figma_scope")?.dependencies).toEqual([]);
+    // No "analyze project" step: the agent reads the project itself.
+    expect(byId.has("B1.prepare_project")).toBe(false);
+    expect(byId.get("B1.implement_ui")?.dependencies).toEqual(["B1.figma_scope"]);
+    expect(byId.get("B1.implement_ui")).toMatchObject({ mutation: true, type: "ai.implement_ui" });
+    expect(byId.get("B1.implement_ui")?.retryPolicy.maxAttempts).toBeGreaterThan(1);
+    // A: the contract can arrive any time; the review starts once both it and the built UI exist.
     expect(byId.get("A.api_contract")?.dependencies).toEqual([]);
-    expect(byId.get("A.readiness")?.dependencies).toEqual(["A.ui_flow", "A.api_contract"]);
-    expect(byId.get("A.readiness")?.readOnly).toBe(false);
-    // B starts from the FE Readiness Package.
-    expect(byId.get("B.implement_ui")?.dependencies).toEqual(["A.readiness", "B.prepare_project"]);
-    expect(byId.get("B.implement_ui")).toMatchObject({ mutation: true, type: "ai.implement_ui" });
-    expect(byId.get("B.implement_ui")?.retryPolicy.maxAttempts).toBeGreaterThan(1);
+    // The review compares the contract with the built UI (Figma is not read again).
+    expect(byId.get("A.review")?.dependencies).toEqual(["A.api_contract", "B1.implement_ui"]);
+    expect(byId.get("A.review")).toMatchObject({ type: "readiness.review", readOnly: false, config: { ai: true } });
+    expect(byId.get("A.api_contract")?.config?.["ai"]).toBeUndefined();
+    // B2 integrates the API only from a reviewed contract.
+    expect(byId.get("B2.api_binding")?.dependencies).toEqual(["A.review", "B1.implement_ui"]);
     // C1 designs tests from BA + UI flow + mapping only, never from the implementation.
-    expect(byId.get("C1.test_design")?.dependencies).toEqual(["C1.ba_spec", "A.ui_flow", "A.readiness"]);
+    expect(byId.get("C1.test_design")?.dependencies).toEqual(["C1.ba_spec", "A.review"]);
     expect(byId.get("C1.ba_spec")?.config?.["waitingRunStatus"]).toBe("test_design_pending");
-    expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "B.quality_gates"]);
+    expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "B2.ui_states"]);
 
     const graph = toGraph(def);
     expect(graph.nodes).toHaveLength(def.nodes.length);
-    expect(graph.edges.find((e) => e.id === "A.readiness->B.implement_ui")?.conditional).toBe(false);
-    expect(graph.edges.some((e) => e.source.startsWith("B.") && e.target.startsWith("C1."))).toBe(false);
+    expect(graph.edges.find((e) => e.id === "A.review->B2.api_binding")?.conditional).toBe(false);
+    expect(graph.edges.some((e) => e.source.startsWith("B2.") && e.target.startsWith("C1."))).toBe(false);
   });
 });

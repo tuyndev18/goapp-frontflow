@@ -41,12 +41,15 @@ describe("SkillLibrary", () => {
     expect(lib.list().map((s) => s.name)).toEqual(["a11y"]);
   });
 
-  it("moves skills assigned to v2 workflow steps to the steps that replaced them", () => {
+  it("moves skills assigned to earlier workflow steps to the steps that replaced them", () => {
     const root = path.join(tmp("ff-skills-"), "skills");
     const lib = new SkillLibrary(root);
     lib.save({ name: "a11y", description: "Accessibility", body: "Label every input." });
     lib.save({ name: "states", description: "UI states", body: "Cover every state." });
-    writeFileSync(path.join(root, "assignments.json"), JSON.stringify({ nodes: { "B1.implement_ui": ["a11y"], "B2.business_ui": ["states"], "C.bind_ui_states": ["states", "a11y"] } }));
+    writeFileSync(
+      path.join(root, "assignments.json"),
+      JSON.stringify({ nodes: { "B.implement_ui": ["a11y"], "B2.business_ui": ["states"], "C.bind_ui_states": ["states", "a11y"] } }),
+    );
     expect(lib.assignments()).toEqual({ "B1.implement_ui": ["a11y"], "B2.ui_states": ["states", "a11y"] });
     expect(lib.forNode("B2.ui_states").map((s) => s.name)).toEqual(["states", "a11y"]);
   });
@@ -149,11 +152,12 @@ describe("agent steps with skills", () => {
           return () => (handler = undefined);
         },
       },
-      settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 1000, agentTimeoutMs: 20_000, fixBudget: 1, interactiveAgents: false }),
+      settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 1000, agentTimeoutMs: 20_000, fixBudget: 1 }),
       mcpConfigDir: path.join(root, "mcp"),
     } as unknown as NodeServices;
 
-    const result = await runAgentStep(ctx, services, { projectId: "p1", adapterId: "claude-code", cwd: root, prompt: "Build the UI", readOnly: false });
+    // The `fake` test adapter is the only one allowed to run headless.
+    const result = await runAgentStep(ctx, services, { projectId: "p1", adapterId: "fake", cwd: root, prompt: "Build the UI", readOnly: false });
 
     expect(result.resultText).toBe("done");
     expect(started[0]!.prompt.startsWith("Build the UI\n\n## Skills for this step")).toBe(true);

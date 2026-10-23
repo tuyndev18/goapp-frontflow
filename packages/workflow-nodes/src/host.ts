@@ -38,15 +38,7 @@ export function createPersistentServices(input: PersistentServicesInput): NodeSe
   };
 }
 
-/** A session started outside any workflow run (Sessions screen), keyed by its synthetic run id. */
-export interface StandaloneSessionInfo {
-  projectId: string;
-  title?: string;
-  metadata?: Record<string, unknown>;
-}
-
 export interface SessionRecorderOptions {
-  standalone?(workflowRunId: string): StandaloneSessionInfo | undefined;
   /** Minimum gap between two activity timestamp writes for one session. Default 2000 ms. */
   activityWriteMs?: number;
 }
@@ -104,18 +96,14 @@ export function createSessionRecorder(db: FrontflowDb, artifactStore: ArtifactSt
   return {
     onEvent(event: AgentEvent): void {
       if (!event.sessionId) return;
-      const runProject = projectOfRun(event.workflowRunId);
-      const standalone = runProject ? undefined : options.standalone?.(event.workflowRunId);
-      const projectId = runProject ?? standalone?.projectId;
+      const projectId = projectOfRun(event.workflowRunId);
       if (!projectId) return;
       if (event.type === "session.started") {
         const existing = db.aiSessions.get(event.sessionId);
-        const metadata = { ...existing?.metadata, ...standalone?.metadata };
-        const title = existing?.title ?? standalone?.title;
         db.aiSessions.save({
           id: event.sessionId,
           projectId,
-          ...(runProject ? { workflowRunId: event.workflowRunId } : {}),
+          workflowRunId: event.workflowRunId,
           ...(event.nodeRunId ? { nodeRunId: event.nodeRunId } : {}),
           adapterId: event.payload.adapterId,
           ...(event.payload.externalSessionId ? { externalSessionId: event.payload.externalSessionId } : {}),
@@ -124,8 +112,7 @@ export function createSessionRecorder(db: FrontflowDb, artifactStore: ArtifactSt
           cwd: event.payload.cwd,
           ...(event.payload.model ? { model: event.payload.model } : {}),
           ...(rawPaths.get(event.sessionId) ? { rawLogPath: rawPaths.get(event.sessionId)! } : {}),
-          ...(Object.keys(metadata).length ? { metadata } : {}),
-          ...(title ? { title } : {}),
+          ...(existing?.metadata ? { metadata: existing.metadata } : {}),
           lastActivityAt: event.timestamp,
           startedAt: existing?.startedAt ?? event.timestamp,
         });

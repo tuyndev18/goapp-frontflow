@@ -1,0 +1,12 @@
+export * from "./types.js";
+export { AccountFsError, acquireDirLock, atomicWriteFile, withLock } from "./fsx.js";
+export { claudeLockPaths, fingerprint, readLiveLogin, resolveClaudePaths, type LiveLogin } from "./live.js";
+export { EncryptedFileVault } from "./vault.js";
+export * from "./credential-store.js";
+export { AccountError, ClaudeAccountManager, type AccountManagerOptions, type Observation, type SwitchOutcome } from "./manager.js";
+export * from "./api.js";
+export * from "./oauth.js";
+export * from "./local-usage.js";
+export * from "./usage-report.js";
+export * from "./statusline.js";
+export * from "./processes.js";

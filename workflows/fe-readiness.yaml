@@ -1,15 +1,17 @@
-# Workflow A — FE Readiness: review the built UI against the API contract (spec §12).
+# Workflow A — review the built UI against the API contract (spec §12).
 # The API contract often arrives after the design: the UI is built from Figma first (B1), and
-# A.api_contract waits for the contract without blocking that work. Once both the contract and the
-# built UI exist, the AI extracts the UI flow from Figma (A2/A4) and maps every UI need to the
-# contract (A5–A8). The "wait for update" loop is a single gate: A.readiness returns
-# waiting_for_input when the package is not_ready. Updated sources start a new run (inputs are
-# immutable snapshots, spec §3.6); provideInput({ accept: true }) continues with the gaps recorded
-# as assumptions.
+# A.api_contract waits for the contract without blocking that work. Reading the contract only
+# saves it into the project (.frontflow/runs/<run>/api-contract.md). A.review is one editable
+# prompt (workflows/prompts/A.review.md) that the agent runs in the project: it compares the
+# contract with the UI code it finds there (Figma is not read again) and writes the review the
+# host turns into the FE Readiness Package and the gap reports (A2–A8). The "wait for update" loop
+# is a single gate: A.review returns waiting_for_input when the package is not_ready. Updated
+# sources start a new run (inputs are immutable snapshots, spec §3.6); provideInput({ accept: true })
+# continues with the gaps recorded as assumptions.
 id: fe-readiness
-version: 4
-name: FE Readiness — UI × API contract
-description: When the API contract is available, extract the UI flow of the built UI from Figma, map every interaction to the contract and decide whether the API can be integrated.
+version: 5
+name: Review UI against API contract
+description: When the API contract is available, save it into the project and let the agent compare it with the built UI to decide whether the API can be integrated.
 requires: [B1.implement_ui]
 defaults:
   group: A
@@ -23,40 +25,21 @@ nodes:
   - id: A.api_contract
     type: readiness.read_api
     label: Read API contract
-    description: Import the API contract (Markdown or OpenAPI) whenever it is ready; the AI normalizes its operations, schemas, errors and roles with line references (A1, A3).
+    description: Import the API contract (Markdown or OpenAPI) whenever it is ready; it is saved into the project for the agent to read.
     # Waits for the user to import the contract; not cacheable because it arrives through provideInput.
     readOnly: false
-    timeoutMs: 2400000
-    config:
-      ai: true
-      aiAttempts: 2
+    timeoutMs: 120000
     retryPolicy:
-      maxAttempts: 3
+      maxAttempts: 2
       backoff: linear
       baseDelayMs: 2000
-      retryableErrors: [IO_ERROR, AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+      retryableErrors: [IO_ERROR]
 
-  - id: A.ui_flow
-    type: readiness.ui_flow
-    label: Extract UI flow
-    description: Once the contract is here and the UI is built, the AI reads the selected frames through the goapp-figma MCP server and derives screens, actions, UI states and the data/action needs of each interaction (A2, A4).
+  - id: A.review
+    type: readiness.review
+    label: AI reviews UI vs API
+    description: The agent compares the API contract with the UI built from Figma (editable prompt) and classifies every UI need; gap reports per owner and the FE Readiness Package follow (A2–A8).
     dependencies: [A.api_contract, B1.implement_ui]
-    readOnly: true
-    timeoutMs: 2400000
-    config:
-      ai: true
-      aiAttempts: 2
-    retryPolicy:
-      maxAttempts: 3
-      backoff: linear
-      baseDelayMs: 2000
-      retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
-
-  - id: A.readiness
-    type: readiness.map
-    label: Map UI ↔ API readiness
-    description: The AI maps every UI data/action need to API operations and classifies it; gap reports per owner, traceability and the FE Readiness Package are computed from that (A5–A8).
-    dependencies: [A.ui_flow, A.api_contract]
     # Not cacheable: the user may accept gaps through provideInput.
     readOnly: false
     timeoutMs: 2400000

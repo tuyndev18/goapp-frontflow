@@ -8,10 +8,10 @@ import type { MutationOutput } from "./ai.js";
 import type { FigmaDesignOutput } from "./figma.js";
 import type { ReadinessOutput } from "./readiness.js";
 import type { TestDesignOutput } from "./test-design.js";
-import type { AcceptanceRunOutput, QualityOutput } from "./verification.js";
+import type { AcceptanceRunOutput } from "./verification.js";
 
 const MUTATION_NODES = ["B1.implement_ui", "B2.api_binding", "B2.ui_states", "C2.generate_tests"];
-const GATE_NODES = ["B2.check_backend", "B2.quality_gates"];
+const GATE_NODES = ["B2.check_backend"];
 
 /** What the renderer's Traceability Matrix reads (spec §20.1 #6). */
 export interface TraceabilityReport {
@@ -33,7 +33,7 @@ export function reportHandlers(services: NodeServices): Record<string, NodeHandl
   return {
     "report.evidence": {
       async execute(ctx, input) {
-        const pkg = upstream<ReadinessOutput>(input, "A.readiness");
+        const pkg = upstream<ReadinessOutput>(input, "A.review");
         const tests = upstream<TestDesignOutput>(input, "C1.test_design");
         const acceptance = upstream<AcceptanceRunOutput>(input, "C2.run_tests");
         const design = optionalUpstream<FigmaDesignOutput>(input, "B1.figma_scope");
@@ -110,9 +110,8 @@ export function reportHandlers(services: NodeServices): Record<string, NodeHandl
 }
 
 function collectGates(input: NodeInput, final: GateResult[]): GateResult[] {
-  const fromMutations = MUTATION_NODES.flatMap((id) => optionalUpstream<MutationOutput>(input, id)?.gates ?? []);
   const fromGateNodes = GATE_NODES.flatMap((id) => optionalUpstream<{ gates: GateResult[] }>(input, id)?.gates ?? []);
-  return [...fromMutations, ...fromGateNodes, ...final];
+  return [...fromGateNodes, ...final];
 }
 
 function count(statuses: string[]): Record<string, number> {

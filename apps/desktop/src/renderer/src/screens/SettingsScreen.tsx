@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AppInfo, CliStatus, FigmaStatusDto, SettingsDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+import { Loading } from "../components/Loading.js";
 
 export function SettingsScreen() {
   const notify = useApp((s) => s.notify);
@@ -33,7 +34,7 @@ export function SettingsScreen() {
     }
   }
 
-  if (!settings) return <div className="ff-screen">Loading…</div>;
+  if (!settings) return <Loading label="Loading settings" screen />;
   return (
     <div className="ff-screen ff-screen-narrow">
       <header className="ff-screen-header">
@@ -74,14 +75,7 @@ export function SettingsScreen() {
               onChange={(e) => void update({ maxConcurrentNodes: Number(e.target.value) })}
             />
           </div>
-          <div className="ff-setting ff-setting-check">
-            <label className="ff-checkbox">
-              <input type="checkbox" checked={settings.interactiveAgents} onChange={(e) => void update({ interactiveAgents: e.target.checked })} />
-              <span>
-                Run Claude Code steps as interactive sessions in the project folder (watch and answer them in AI terminals) instead of headless <span className="ff-mono">claude -p</span>
-              </span>
-            </label>
-          </div>
+          <p className="ff-muted ff-small">Claude Code steps always run as interactive sessions in the project folder: watch and answer them in the run&apos;s AI terminals.</p>
           <h3>Installed adapters</h3>
           <table className="ff-table ff-table-compact">
             <thead>

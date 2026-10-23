@@ -144,6 +144,7 @@ async function writeFileTool(name, content) {
   const filePath = path.join(cwd, name);
   assistant([{ type: "tool_use", id, name: "Write", input: { file_path: filePath, content } }]);
   await sleep(10);
+  mkdirSync(path.dirname(filePath), { recursive: true });
   writeFileSync(filePath, content);
   toolResult(id, `File created successfully at: ${filePath}`, false, { type: "create", filePath, content });
 }
@@ -156,12 +157,12 @@ async function runTurn(prompt) {
   await sleep(10);
 
   // Canned answers for FrontFlow's analysis steps: when the prompt asks to write a JSON file
-  // ("Write [the result to] <name>.json in the current directory") and $FAKE_CLI_OUTPUTS_DIR
-  // has it, "write" it like a real agent would.
+  // ("Write <path>.json with …", path relative to the project) and $FAKE_CLI_OUTPUTS_DIR has a
+  // file with that name, "write" it like a real agent would.
   const outputsDir = process.env.FAKE_CLI_OUTPUTS_DIR;
-  const requested = /Write (?:the result to )?([\w.-]+\.json) in the current directory/.exec(prompt)?.[1];
+  const requested = /\bWrite (?:the result to )?`?([\w./-]+\.json)`?/.exec(prompt)?.[1];
   if (outputsDir && scenario === "success" && requested) {
-    const source = path.join(outputsDir, requested);
+    const source = path.join(outputsDir, path.basename(requested));
     if (existsSync(source)) {
       await writeFileTool(requested, readFileSync(source, "utf8"));
       result(`Wrote ${requested}`);

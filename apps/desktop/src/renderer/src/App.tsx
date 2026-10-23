@@ -5,9 +5,11 @@ import { ProjectOverview } from "./screens/ProjectOverview.js";
 import { NewFeatureRun } from "./screens/NewFeatureRun.js";
 import { RunScreen } from "./screens/RunScreen.js";
 import { TraceabilityMatrix } from "./screens/TraceabilityMatrix.js";
-import { SessionsScreen } from "./screens/SessionsScreen.js";
+import { AccountsScreen } from "./screens/AccountsScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { SkillsScreen } from "./screens/SkillsScreen.js";
+import { UsageScreen } from "./screens/UsageScreen.js";
+import { AccountsBubble } from "./components/AccountsBubble.js";
 import { ApprovalsBar } from "./components/ApprovalsBar.js";
 import { BrandMark } from "./components/BrandMark.js";
 import { NavIcon, type NavIconName } from "./components/NavIcon.js";
@@ -81,8 +83,11 @@ export function App() {
           <NavButton active={screen.name === "projects"} onClick={() => navigate({ name: "projects" })} icon="projects">
             Projects
           </NavButton>
-          <NavButton active={screen.name === "sessions"} onClick={() => navigate({ name: "sessions", ...(projectId ? { projectId } : {}) })} icon="sessions">
-            Sessions
+          <NavButton active={screen.name === "accounts"} onClick={() => navigate({ name: "accounts" })} icon="accounts">
+            Accounts
+          </NavButton>
+          <NavButton active={screen.name === "usage"} onClick={() => navigate({ name: "usage" })} icon="usage">
+            Usage
           </NavButton>
           <NavButton active={screen.name === "skills"} onClick={() => navigate({ name: "skills" })} icon="skills">
             Skills
@@ -121,10 +126,12 @@ export function App() {
         {screen.name === "new-run" && <NewFeatureRun projectId={screen.projectId} />}
         {screen.name === "run" && <RunScreen key={screen.runId} projectId={screen.projectId} runId={screen.runId} {...(screen.nodeId ? { initialNodeId: screen.nodeId } : {})} />}
         {screen.name === "matrix" && <TraceabilityMatrix projectId={screen.projectId} runId={screen.runId} />}
-        {screen.name === "sessions" && <SessionsScreen projectId={screen.projectId} />}
+        {screen.name === "accounts" && <AccountsScreen />}
+        {screen.name === "usage" && <UsageScreen />}
         {screen.name === "skills" && <SkillsScreen {...(screen.nodeId ? { focusNodeId: screen.nodeId } : {})} />}
         {screen.name === "settings" && <SettingsScreen />}
       </main>
+      {screen.name !== "accounts" && <AccountsBubble />}
       {toast ? (
         <div className={`ff-toast ff-toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"}>
           <span>{toast.message}</span>

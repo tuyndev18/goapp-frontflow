@@ -697,6 +697,68 @@ a {
   opacity: 1;
   background: var(--danger-soft);
 }
+.ff-btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.ff-btn-ghost:hover:not(:disabled) {
+  color: var(--text);
+}
+
+/* ---------- Menu: a button with a small list of actions under it ---------- */
+.ff-menu {
+  position: relative;
+  display: inline-flex;
+}
+.ff-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  font-family: var(--font-body);
+}
+.ff-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ff-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+.ff-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ff-menu-item small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ff-menu-danger {
+  color: var(--danger);
+}
+.ff-menu-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+}
 .ff-link {
   background: none;
   border: 0;
@@ -891,6 +953,267 @@ input[type="radio"] {
   .ff-spin,
   .ff-live {
     animation: none !important;
+  }
+}
+
+/* ---------- Loading ---------- */
+/* One 2.4s cycle: stem draws → branch draws → nodes pop → hold → fade, so the mark reads as a workflow running. */
+.ff-loading {
+  --ff-loader-cycle: 2.4s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 48px 24px;
+  color: var(--muted);
+  font-size: 13px;
+  /* Delayed fade-in: loads that finish fast never flash the loader. */
+  animation: ff-loading-in 0.3s ease-out 0.15s both;
+}
+.ff-loading-screen {
+  flex: 1;
+  min-height: 320px;
+  gap: 24px;
+}
+.ff-loader {
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+.ff-loading-screen .ff-loader {
+  width: 64px;
+  height: 64px;
+}
+.ff-loader-mark {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 8px 20px color-mix(in srgb, var(--primary) 35%, transparent));
+  animation: ff-loader-breathe var(--ff-loader-cycle) ease-in-out infinite;
+}
+.ff-loader-mark rect {
+  fill: var(--primary);
+}
+.ff-loader-mark path {
+  fill: none;
+  stroke: var(--primary-text);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 2;
+  stroke-dashoffset: 1;
+}
+.ff-loader-stem {
+  animation: ff-loader-stem var(--ff-loader-cycle) cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.ff-loader-branch {
+  animation: ff-loader-branch var(--ff-loader-cycle) cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.ff-loader-node {
+  fill: var(--primary-text);
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0);
+}
+.ff-loader-node-1 {
+  animation: ff-loader-node-1 var(--ff-loader-cycle) ease-out infinite;
+}
+.ff-loader-node-2 {
+  animation: ff-loader-node-2 var(--ff-loader-cycle) ease-out infinite;
+}
+.ff-loader-ripple {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--primary);
+  border-radius: 24%;
+  opacity: 0;
+  animation: ff-loader-ripple var(--ff-loader-cycle) cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+.ff-loader-ripple + .ff-loader-ripple {
+  animation-delay: calc(var(--ff-loader-cycle) / 2);
+}
+.ff-loading-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.ff-loading-screen .ff-loading-text {
+  font-size: 14px;
+}
+.ff-loading-label {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 35%, var(--text) 50%, var(--muted) 65%, var(--muted) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ff-loading-shimmer var(--ff-loader-cycle) linear infinite;
+}
+.ff-loading-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.ff-loading-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--rounded-full);
+  background: var(--primary);
+  animation: ff-loading-dot 1.2s ease-in-out infinite;
+}
+.ff-loading-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ff-loading-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes ff-loading-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes ff-loader-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  60% {
+    transform: scale(1.05);
+  }
+}
+/* Opacity 0 at the start hides the round line cap that would otherwise show as a dot before the draw. */
+@keyframes ff-loader-stem {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  4% {
+    opacity: 1;
+  }
+  32%,
+  84% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes ff-loader-branch {
+  0%,
+  20% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  24% {
+    opacity: 1;
+  }
+  46%,
+  84% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+@keyframes ff-loader-node-1 {
+  0%,
+  30% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  48%,
+  84% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes ff-loader-node-2 {
+  0%,
+  44% {
+    transform: scale(0);
+  }
+  54% {
+    transform: scale(1.35);
+  }
+  62%,
+  84% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes ff-loader-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.75);
+    opacity: 0;
+  }
+}
+@keyframes ff-loading-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+@keyframes ff-loading-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ff-loading,
+  .ff-loader-mark,
+  .ff-loader-mark path,
+  .ff-loader-node,
+  .ff-loading-label,
+  .ff-loading-dots i {
+    animation: none;
+  }
+  .ff-loader-mark path {
+    stroke-dashoffset: 0;
+  }
+  .ff-loader-node {
+    transform: none;
+  }
+  .ff-loader-ripple {
+    display: none;
+  }
+  .ff-loading-label {
+    background: none;
+    color: var(--muted);
+  }
+  /* Keep a slow pulse: a frozen mark reads as stuck. */
+  .ff-loader {
+    animation: ff-pulse 2.4s ease-in-out infinite;
   }
 }
 
@@ -2170,6 +2493,7 @@ input[type="radio"] {
   left: 50%;
   display: flex;
   gap: 2px;
+  white-space: nowrap;
   transform: translateX(-50%);
 }
 .ff-gnode-chip {
@@ -2186,6 +2510,10 @@ input[type="radio"] {
   border-color: transparent;
   background: var(--ai-soft, #ede4fb);
   color: var(--ai, #6940a5);
+}
+/* Ticks every second while the step runs; fixed-width digits keep the chip from jittering. */
+.ff-gnode-chip-time {
+  font-variant-numeric: tabular-nums;
 }
 .ff-gnode-chip-assumed {
   border-color: transparent;
@@ -2433,7 +2761,8 @@ input[type="radio"] {
 .ff-toast {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  /* Above the accounts bubble. */
+  bottom: 84px;
   z-index: 50;
   display: flex;
   align-items: center;
@@ -2534,38 +2863,88 @@ input[type="radio"] {
 .ff-align-untested {
   color: var(--muted);
 }
-.ff-markdown {
+/* github-markdown-css does the layout; its colors follow the app theme (data-theme), not the OS. */
+.ff-markdown.markdown-body {
+  --fgColor-default: var(--text-body);
+  --fgColor-muted: var(--muted);
+  --fgColor-accent: var(--primary);
+  --fgColor-danger: var(--danger);
+  --bgColor-default: var(--surface);
+  --bgColor-muted: var(--code-bg);
+  --bgColor-neutral-muted: var(--hover);
+  --bgColor-attention-muted: var(--warning-soft);
+  --borderColor-default: var(--border);
+  --borderColor-muted: var(--border);
+  --borderColor-neutral-muted: var(--border);
+  --borderColor-accent-emphasis: var(--primary);
+  --focus-outlineColor: var(--focus);
+  --fontStack-sansSerif: var(--font-body);
+  --fontStack-monospace: var(--font-mono);
+  color-scheme: inherit;
   padding: 16px 24px;
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
-  background: var(--surface);
-  color: var(--text-body);
+  font-size: 14px;
 }
-.ff-markdown h1 {
-  font-size: 22px;
-  margin: 8px 0 12px;
-}
-.ff-markdown h2 {
-  margin: 20px 0 8px;
+.ff-markdown h1,
+.ff-markdown h2,
+.ff-markdown h3 {
+  color: var(--text);
 }
 .ff-markdown pre {
-  padding: 12px 16px;
-  overflow: auto;
   border-radius: var(--rounded-md);
-  background: var(--code-bg);
 }
-.ff-markdown pre code {
+.ff-markdown pre code.hljs {
   padding: 0;
-  background: none;
-  color: inherit;
+  background: transparent;
 }
 .ff-markdown table {
-  border-collapse: collapse;
+  display: table;
+  width: max-content;
+  max-width: 100%;
 }
-.ff-markdown th,
-.ff-markdown td {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
+
+/* highlight.js ships github.css (light); night mode uses its github-dark palette. */
+:root[data-theme="dark"] .hljs {
+  color: #c9d1d9;
+}
+:root[data-theme="dark"] :is(.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_) {
+  color: #ff7b72;
+}
+:root[data-theme="dark"] :is(.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_) {
+  color: #d2a8ff;
+}
+:root[data-theme="dark"] :is(.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id) {
+  color: #79c0ff;
+}
+:root[data-theme="dark"] :is(.hljs-regexp, .hljs-string, .hljs-meta .hljs-string) {
+  color: #a5d6ff;
+}
+:root[data-theme="dark"] :is(.hljs-built_in, .hljs-symbol) {
+  color: #ffa657;
+}
+:root[data-theme="dark"] :is(.hljs-comment, .hljs-code, .hljs-formula) {
+  color: #8b949e;
+}
+:root[data-theme="dark"] :is(.hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo) {
+  color: #7ee787;
+}
+:root[data-theme="dark"] .hljs-subst {
+  color: #c9d1d9;
+}
+:root[data-theme="dark"] .hljs-section {
+  color: #1f6feb;
+}
+:root[data-theme="dark"] .hljs-bullet {
+  color: #f2cc60;
+}
+:root[data-theme="dark"] .hljs-addition {
+  color: #aff5b4;
+  background-color: #033a16;
+}
+:root[data-theme="dark"] .hljs-deletion {
+  color: #ffdcd7;
+  background-color: #67060c;
 }
 
 /* ---------- Step inputs & new feature ---------- */
@@ -3046,6 +3425,17 @@ input[type="radio"] {
 .ff-skill-editor h3 {
   margin: 0 0 16px;
 }
+.ff-skill-body-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ff-skill-preview {
+  min-height: 360px;
+  max-height: 70vh;
+  overflow: auto;
+}
 .ff-skill-body {
   min-height: 360px;
   font-size: 13px;
@@ -3079,284 +3469,907 @@ input[type="radio"] {
   margin: 8px 0 0;
 }
 
-/* ---------- Sessions: conversations list + pane grid ---------- */
-.ff-sstats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+/* ---------- Accounts: Claude logins of this computer (claude-swap's watch view) ---------- */
+:root {
+  --sev-ok: #1f9d55;
+  --sev-warn: #d98a00;
+  --sev-crit: #d93f3f;
+  --acc-accent: #c26a3d;
+  --sev-track: #ebe9e4;
+}
+:root[data-theme="dark"] {
+  --sev-ok: #3fbf74;
+  --sev-warn: #f0a52a;
+  --sev-crit: #ef5b5b;
+  --acc-accent: #d7875f;
+  --sev-track: #34342f;
+}
+.ff-acc-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin: 0 0 16px;
-}
-.ff-sstat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--rounded-md);
   background: var(--surface);
+  color: var(--text-body);
 }
-.ff-sstat-label {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
+.ff-acc-banner-warn {
+  border-color: color-mix(in srgb, var(--sev-warn) 45%, var(--border));
+  background: color-mix(in srgb, var(--sev-warn) 10%, transparent);
+  color: var(--sev-warn);
 }
-.ff-sstat-value {
-  color: var(--text);
-  font-size: 20px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.3;
+.ff-acc-login-term {
+  height: 340px;
+  border-radius: var(--rounded-md);
+  overflow: hidden;
 }
-.ff-sstat-hint {
-  color: var(--muted-soft);
-  font-size: 12px;
+.ff-acc-login-term > .ff-terminal {
+  min-height: 0;
 }
-.ff-sboard {
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-@media (max-width: 1100px) {
-  .ff-sboard {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .ff-sstats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-.ff-slist {
+/* Account cards: who, where the login is, then one tile per quota window. */
+.ff-acards {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 290px);
-  min-height: 320px;
+  gap: 16px;
+}
+.ff-acard {
+  padding: 18px 20px 14px;
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
   background: var(--surface);
-  overflow: hidden;
 }
-.ff-slist-tools {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+.ff-acard-active {
+  border-color: color-mix(in srgb, var(--sev-ok) 45%, var(--border));
+  box-shadow: inset 3px 0 0 var(--sev-ok);
 }
-.ff-slist-cli {
-  height: 28px;
-  font-size: 13px;
-}
-.ff-slist-items {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  overflow-y: auto;
-}
-.ff-sitem {
+.ff-acard-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: var(--rounded-md);
-  background: transparent;
-  color: var(--text-body);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  gap: 14px;
 }
-.ff-sitem:hover {
-  background: var(--hover);
+.ff-acard-avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
-.ff-sitem-open {
-  background: var(--surface-2);
-}
-.ff-sitem-focused {
-  background: var(--primary-soft);
-}
-.ff-sitem-main {
-  display: flex;
-  flex-direction: column;
+.ff-acard-who {
   flex: 1;
   min-width: 0;
 }
-.ff-sitem-title {
-  color: var(--text);
-  font-weight: 600;
+.ff-acard-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
 }
-.ff-sitem-side {
+.ff-acard-name strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ff-acard-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 0;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.ff-acard-meta > span + span::before {
+  content: "·";
+  margin: 0 8px;
+  color: var(--muted-soft);
+}
+.ff-acard-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+.ff-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: var(--rounded-full);
+  background: var(--hover);
+  color: var(--text-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.ff-chip-ok {
+  background: color-mix(in srgb, var(--sev-ok) 14%, transparent);
+  color: var(--sev-ok);
+}
+.ff-chip-ok::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ff-chip-crit {
+  background: color-mix(in srgb, var(--sev-crit) 12%, transparent);
+  color: var(--sev-crit);
+}
+.ff-mtiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.ff-mtile {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  flex-shrink: 0;
-  gap: 2px;
-  font-variant-numeric: tabular-nums;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--surface-2);
 }
-.ff-sitem-state {
-  color: var(--text-body);
-  font-weight: 500;
+.ff-mtile-warn {
+  border-color: color-mix(in srgb, var(--sev-warn) 40%, var(--border));
 }
-
-/* State dot: color = state; working pulses. */
-.ff-sdot {
-  flex-shrink: 0;
-  width: 9px;
-  height: 9px;
+.ff-mtile-crit {
+  border-color: color-mix(in srgb, var(--sev-crit) 50%, var(--border));
+  background: color-mix(in srgb, var(--sev-crit) 6%, var(--surface-2));
+}
+.ff-mtile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ff-mtile-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ff-mtile-sub {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ff-mtile-value {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.ff-mtile-value small {
+  margin-left: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+.ff-mtile-bar {
+  height: 10px;
+  margin: 2px 0;
+}
+.ff-mtile .ff-wpace {
+  box-shadow: 0 0 0 2px var(--surface-2);
+}
+.ff-mtile-foot {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ff-mtile-note {
+  font-size: 12px;
+  font-weight: 600;
+}
+.ff-mtiles-stale .ff-mtile-value,
+.ff-mtiles-stale .ff-wfill {
+  opacity: 0.55;
+}
+.ff-acard-nodata {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--rounded-md);
+  color: var(--muted);
+  font-size: 13px;
+}
+.ff-acard-details {
+  margin-top: 10px;
+  padding-left: 0;
+}
+.ff-wmuted {
+  color: var(--muted);
+}
+.ff-wactive {
+  color: var(--acc-accent);
+  font-weight: 700;
+}
+.ff-wwarn {
+  color: var(--sev-warn);
+}
+.ff-wcrit {
+  color: var(--sev-crit);
+  font-weight: 600;
+}
+/* Neutral icon button (refresh, ⋯): .ff-icon-btn's red hover is for delete. */
+.ff-acc-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.ff-acc-icon:hover:not(:disabled),
+.ff-acc-icon[aria-expanded="true"] {
+  opacity: 1;
+  background: var(--hover);
+  color: var(--text);
+}
+.ff-acc-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.ff-actions > .ff-acc-icon,
+.ff-actions > .ff-menu > .ff-acc-icon {
+  width: 32px;
+  height: 32px;
+}
+/* Quota bar, shared by the cards and the bubble: a track tinted with the bar's own colour. */
+.ff-wbar {
+  --bar-tone: var(--sev-ok);
+  position: relative;
+  display: block;
+  height: 8px;
+}
+.ff-wbar:has(.ff-sev-warn) {
+  --bar-tone: var(--sev-warn);
+}
+.ff-wbar:has(.ff-sev-crit) {
+  --bar-tone: var(--sev-crit);
+}
+.ff-wtrack,
+.ff-wfill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
   border-radius: var(--rounded-full);
-  background: var(--muted-soft);
 }
-.ff-sdot-starting,
-.ff-sdot-working {
-  background: var(--info-dot);
-  animation: ff-sdot-pulse 1.4s ease-in-out infinite;
+.ff-wtrack {
+  right: 0;
+  background: color-mix(in srgb, var(--bar-tone) 16%, var(--sev-track));
 }
-.ff-sdot-waiting_user {
-  background: var(--warning-dot);
+.ff-wfill {
+  min-width: 4px;
+  transition: width 0.4s ease;
 }
-.ff-sdot-stalled,
-.ff-sdot-error {
-  background: var(--danger-dot);
+.ff-sev-ok {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sev-ok) 70%, #fff), var(--sev-ok));
 }
-.ff-sdot-ended {
-  background: var(--success-dot);
+.ff-sev-warn {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sev-warn) 70%, #fff), var(--sev-warn));
 }
-@keyframes ff-sdot-pulse {
-  50% {
-    opacity: 0.35;
+.ff-sev-crit {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sev-crit) 70%, #fff), var(--sev-crit));
+}
+/* The even-pace mark: where usage would be if spread evenly over the window. */
+.ff-wpace {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--text);
+  box-shadow: 0 0 0 2px var(--surface);
+  opacity: 0.75;
+}
+.ff-wpct {
+  text-align: right;
+  font-weight: 600;
+}
+.ff-sevtext-ok {
+  color: var(--sev-ok);
+}
+.ff-sevtext-warn {
+  color: var(--sev-warn);
+}
+.ff-sevtext-crit {
+  color: var(--sev-crit);
+}
+.ff-sevtext-unknown {
+  color: var(--muted);
+}
+.ff-wdetails {
+  margin: 6px 0 0;
+  font-family: var(--font-body);
+}
+.ff-wdetails summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ff-wdetails dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 8px 0 4px;
+  font-size: 13px;
+}
+.ff-wdetails dt {
+  color: var(--muted);
+}
+.ff-wdetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .ff-acard-head {
+    flex-wrap: wrap;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ff-sdot-starting,
-  .ff-sdot-working {
-    animation: none;
+  .ff-wfill {
+    transition: none;
   }
 }
-/* Activity age: how recent, not what state. */
-.ff-age-hot {
-  color: var(--success);
+/* Accounts bubble: quick look at every login's 5h session window from any screen. */
+.ff-accb {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.ff-accb-fab {
+  --accb-tone: var(--muted-soft);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--accb-tone) 9%, var(--surface)), var(--surface) 72%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 18px rgba(0, 0, 0, 0.1);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.ff-accb-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+.ff-accb-fab:focus-visible {
+  outline: 2px solid var(--accb-tone);
+  outline-offset: 3px;
+}
+.ff-accb-tone-ok {
+  --accb-tone: var(--sev-ok);
+}
+.ff-accb-tone-warn {
+  --accb-tone: var(--sev-warn);
+}
+.ff-accb-tone-crit {
+  --accb-tone: var(--sev-crit);
+}
+.ff-accb-fab-crit {
+  animation: ff-accb-pulse 1.8s ease-in-out infinite;
+}
+@keyframes ff-accb-pulse {
+  0%,
+  100% {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 18px rgba(0, 0, 0, 0.1), 0 0 0 0 color-mix(in srgb, var(--sev-crit) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 18px rgba(0, 0, 0, 0.1), 0 0 0 9px color-mix(in srgb, var(--sev-crit) 0%, transparent);
+  }
+}
+.ff-accb-ring {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+}
+.ff-accb-ring svg {
+  position: absolute;
+  inset: 0;
+}
+.ff-accb-ring circle {
+  fill: none;
+  stroke-width: 4;
+}
+.ff-accb-ring-track {
+  stroke: color-mix(in srgb, var(--accb-tone) 16%, transparent);
+}
+.ff-accb-ring-fill {
+  stroke: var(--accb-tone);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.5s ease;
+}
+.ff-accb-ring-text {
+  display: flex;
+  align-items: baseline;
+  color: var(--text);
+  line-height: 1;
+}
+.ff-accb-ring-text b {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+.ff-accb-ring-text small {
+  margin-left: 1px;
+  color: var(--muted);
+  font-size: 10px;
   font-weight: 600;
 }
-.ff-age-warm {
-  color: var(--text-body);
+.ff-accb-tone-crit .ff-accb-ring-text b {
+  color: var(--sev-crit);
 }
-.ff-age-cool,
-.ff-age-cold {
-  color: var(--muted-soft);
-}
-
-.ff-sgrid-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-.ff-sgrid-tools {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-}
-.ff-sgrid {
-  display: grid;
-  gap: 12px;
-  height: calc(100vh - 330px);
-  min-height: 560px;
-}
-.ff-sgrid-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.ff-sgrid-4 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  min-height: 720px;
-}
-@media (max-width: 1400px) {
-  .ff-sgrid-2,
-  .ff-sgrid-4 {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: none;
-    grid-auto-rows: minmax(480px, 1fr);
-    height: auto;
-  }
-}
-.ff-spane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
+.ff-accb-panel {
+  width: 340px;
+  max-height: min(480px, calc(100vh - 120px));
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
   background: var(--surface);
-  overflow: hidden;
+  box-shadow: var(--shadow-2);
 }
-.ff-spane-focused {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
-  box-shadow: 0 0 0 2px var(--primary-soft);
-}
-.ff-spane-head {
+.ff-accb-head {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ff-accb-alert {
+  margin: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--sev-crit);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ff-accb-list {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+.ff-accb-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 14px;
+}
+.ff-accb-item-active {
+  background: var(--surface-2);
+}
+.ff-accb-name {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ff-accb-meter {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr) 4.5ch;
   align-items: center;
   gap: 8px;
-  padding: 8px 8px 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
-.ff-spane-title {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 14px;
-  cursor: text;
+.ff-accb-reset {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
 }
-.ff-spane-rename {
-  width: 100%;
-  height: 28px;
-}
-.ff-spane-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.ff-spane-meta {
-  display: flex;
-  gap: 4px 12px;
-  flex-wrap: wrap;
-  padding: 0 12px 8px;
-  border-bottom: 1px solid var(--border);
-  font-variant-numeric: tabular-nums;
-}
-.ff-spane-meta > .ff-mono {
-  max-width: 100%;
-}
-.ff-spane-body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-.ff-spane-body > .ff-terminal {
-  flex: 1;
-  min-height: 0;
-}
-.ff-spane-body > .ff-empty {
-  margin: 16px;
+@media (prefers-reduced-motion: reduce) {
+  .ff-accb-fab,
+  .ff-accb-fab-crit {
+    animation: none;
+    transition: none;
+  }
 }
 
-.ff-new-session {
-  width: min(600px, calc(100vw - 32px));
-  max-width: none;
+/* ---------- Prompt editor (every AI step is an editable prompt) ---------- */
+.ff-prompt-text {
+  width: 100%;
+  min-height: 320px;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  white-space: pre-wrap;
 }
-.ff-new-session-row {
-  display: flex;
+.ff-prompt-var {
+  margin-right: 6px;
+  padding: 1px 5px;
+  border-radius: var(--rounded-sm);
+  background: var(--surface-3);
+  font-size: 11px;
+}
+.ff-tabs-small .ff-tab {
+  font-size: 12px;
+}
+
+/* ---------- Usage dashboard ---------- */
+/* Categorical chart palette in fixed slot order (validated light on #fff, dark on #202020). */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #6250d6;
+  --viz-8: #e34948;
+  --viz-other: #a9a7a1;
+  --viz-none: #d4d2cc;
+  --viz-grid: #ebeae6;
+  --viz-axis: #c3c2b7;
+}
+:root[data-theme="dark"] {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-other: #6f6e69;
+  --viz-none: #45443f;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #45443f;
+}
+.ff-usage-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
   gap: 16px;
-  align-items: flex-start;
+  margin-bottom: 24px;
 }
-.ff-new-session-hint {
-  margin: -8px 0 16px;
+.ff-usage-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-lg);
+  background: var(--surface);
 }
-.ff-new-session-workspace {
-  border: 0;
+.ff-usage-tile-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ff-usage-tile-value {
+  color: var(--text);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.ff-usage-mixbar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  margin: 6px 0 4px;
+  border-radius: var(--rounded-full);
+  overflow: hidden;
+  background: var(--sev-track);
+}
+.ff-usage-mixbar > span {
+  min-width: 2px;
+}
+.ff-usage-mixlegend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  margin: 0;
   padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-body);
+}
+.ff-usage-mixlegend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ff-usage-card h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.ff-usage-h3 {
+  margin: 12px 0 4px;
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ff-usage-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ff-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.ff-usage-grid > .ff-card {
+  margin-bottom: 24px;
+}
+.ff-viz-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.ff-viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 12px 0 4px;
+  padding: 0;
+  list-style: none;
+  color: var(--text-body);
+  font-size: 12px;
+}
+.ff-viz-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ff-viz-chart {
+  position: relative;
+  width: 100%;
+  margin-top: 8px;
+}
+.ff-viz-chart svg {
+  display: block;
+  overflow: visible;
+}
+.ff-viz-grid {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+}
+.ff-viz-axis {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+}
+.ff-viz-tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.ff-viz-hoverband {
+  fill: var(--hover);
+}
+.ff-viz-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ff-viz-dot {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+.ff-viz-crosshair {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+}
+.ff-viz-tip {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 170px;
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  color: var(--text-body);
+  font-size: 12px;
+  pointer-events: none;
+}
+.ff-viz-tip strong {
+  color: var(--text);
+}
+.ff-viz-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ff-viz-tip-row b {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ff-usage-table-toggle {
+  margin-top: 12px;
+}
+.ff-usage-table-toggle summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ff-usage-scroll {
+  overflow-x: auto;
+}
+.ff-usage-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ff-usage-table th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.ff-usage-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-body);
+  vertical-align: middle;
+}
+.ff-usage-table tr:last-child td {
+  border-bottom: 0;
+}
+.ff-usage-table .ff-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ff-usage-proj {
+  max-width: 360px;
+}
+.ff-usage-proj strong,
+.ff-usage-proj span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ff-usage-proj strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.ff-usage-proj span {
+  font-size: 11px;
+}
+.ff-usage-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+}
+.ff-usage-inline-track {
+  position: relative;
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  border-radius: var(--rounded-full);
+  background: var(--sev-track);
+  overflow: hidden;
+}
+.ff-usage-inline-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--rounded-full);
+  background: var(--viz-1);
+}
+.ff-usage-bars {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(60px, 1fr) max-content;
+  align-items: center;
+  gap: 10px 12px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.ff-usage-bars li {
+  display: contents;
+}
+.ff-usage-bars-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--text-body);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ff-usage-bars-label.ff-mono {
+  font-size: 12px;
+}
+.ff-usage-bars-track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--rounded-full);
+  background: var(--sev-track);
+}
+.ff-usage-bars-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--rounded-full);
+}
+.ff-usage-bars-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.ff-usage-foot {
+  margin: 0 0 24px;
+}
+@media (max-width: 1100px) {
+  .ff-usage-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .ff-usage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* A choice of a few options, all visible: model and effort of a new feature. */
+.ff-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ff-choice-btn {
+  min-width: 72px;
+  padding: 7px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+  color: var(--text-body);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.ff-choice-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.ff-choice-active,
+.ff-choice-active:hover {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-text);
+  font-weight: 600;
 }

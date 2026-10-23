@@ -112,7 +112,7 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     await page.getByLabel("Feature name").fill("Cancel order");
     await page.getByRole("button", { name: "Create feature" }).click();
 
-    // Step A.figma_scope only receives data: the plugin pushes, nothing runs until Run is clicked.
+    // Step B1.figma_scope only receives data: the plugin pushes, nothing runs until Run is clicked.
     await expect(page.getByRole("heading", { name: "Select Figma scope" })).toBeVisible();
     if (shots) await page.getByRole("region", { name: "Workflow canvas" }).screenshot({ path: join(shots, "0-canvas-start.png"), animations: "disabled" });
     await expect(page.getByTestId("figma-listening")).toContainText("Listening", { timeout: 30_000 });
@@ -120,7 +120,7 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     await expect(page.getByTestId("figma-handoff")).toContainText("Create Tournament Modal", { timeout: 15_000 });
     await page.getByRole("button", { name: "Run with 1 frame" }).click();
 
-    // Step A.api_contract asks for the API contract: with Figma it decides FE readiness.
+    // Step A.api_contract asks for the API contract whenever it is ready; the UI is built meanwhile.
     await step(page, "Read API contract").click();
     await expect(page.getByText("Needs your input.")).toBeVisible({ timeout: 30_000 });
     await page.getByLabel("API contract", { exact: true }).setInputFiles(join(FIXTURES, "alignment/cancel-order/api.md"));
@@ -135,19 +135,30 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
 
     // Follow the run live.
     await page.getByRole("button", { name: "All activity", exact: true }).click();
-    await expect(page.getByRole("log")).toContainText("AI extracted 2 API operations", { timeout: 60_000 });
+    await expect(page.getByRole("log")).toContainText("Saved api.md", { timeout: 60_000 });
     await expect(runStatus(page)).toHaveAttribute("aria-label", /Completed with assumptions/, { timeout: 180_000 });
-    await expect(page.getByRole("log")).toContainText("mapped by AI");
+    await expect(page.getByRole("log")).toContainText("reviewed by AI");
     await expect(page.getByRole("log")).toContainText("AI finished");
     await expect(page.getByRole("log")).toContainText("Contract-only");
     if (shots) await page.screenshot({ path: join(shots, "2-run-activity.png") });
 
-    await step(page, "Map UI ↔ API readiness").click();
+    await step(page, "AI reviews UI vs API").click();
     await expect(page.getByRole("region", { name: "FE readiness verdict" })).toContainText("3 of 3 UI needs ready to implement (100%)");
     if (shots) await page.screenshot({ path: join(shots, "5-verdict.png") });
     await step(page, "AI implements UI").click();
     await expect(page.getByRole("log")).toContainText("Checkpoint");
     if (shots) await page.screenshot({ path: join(shots, "3-step-detail.png") });
+
+    // The step is just an editable prompt.
+    await page.getByRole("tab", { name: "Prompt" }).click();
+    const promptBox = page.getByLabel("Prompt of AI implements UI");
+    await expect(promptBox).toHaveValue(/Implement the presentational UI of the feature "\{\{feature\}\}"/);
+    await promptBox.fill("Implement the presentational UI of {{feature}} pixel-perfect.\n\n{{figma}}");
+    await page.getByRole("button", { name: "Save prompt" }).click();
+    await expect(page.getByText("edited", { exact: true })).toBeVisible();
+    if (shots) await page.screenshot({ path: join(shots, "8-prompt.png") });
+    await page.getByRole("button", { name: "Reset to default" }).click();
+    await expect(promptBox).toHaveValue(/Implement the presentational UI of the feature/);
 
     // Readable AI conversation, follow-up chat and interactive takeover.
     await page.getByRole("tab", { name: "AI chat" }).click();
@@ -176,9 +187,9 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     // The workflow canvas sits above the run body on every view; each step carries its manual action.
     await page.getByRole("button", { name: "All activity", exact: true }).click();
     const canvas = page.getByRole("region", { name: "Workflow canvas" });
-    await expect(canvas.locator(".react-flow__node-step")).toHaveCount(15);
-    await expect(canvas.locator(".react-flow__node-lane")).toHaveCount(3);
-    await expect(canvas.locator(".ff-gnode")).toHaveCount(15);
+    await expect(canvas.locator(".react-flow__node-step")).toHaveCount(13);
+    await expect(canvas.locator(".react-flow__node-lane")).toHaveCount(4);
+    await expect(canvas.locator(".ff-gnode")).toHaveCount(13);
     // Finished steps need nothing from you: no action button left on the canvas.
     await expect(canvas.locator(".ff-gnode-action")).toHaveCount(0);
     if (shots) await page.screenshot({ path: join(shots, "4-graph.png"), animations: "disabled" });

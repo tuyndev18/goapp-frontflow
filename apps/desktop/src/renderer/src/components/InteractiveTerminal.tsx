@@ -3,12 +3,18 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { api, errorMessage } from "../api.js";
 
+/** A chat message as typed into Claude Code's UI: pasted as one block (newlines kept), then Enter. */
+export function typedMessage(text: string): string {
+  return `\x1b[200~${text}\x1b[201~\r`;
+}
+
 /**
  * The AI CLI's own interactive UI in a PTY (like a tmux pane): the user types
  * and chats directly. It resumes the step's conversation when the CLI supports it.
  */
-export function InteractiveTerminal({ sessionId, onClose }: { sessionId: string; onClose(): void }) {
+export function InteractiveTerminal({ sessionId, initialInput, onClose }: { sessionId: string; initialInput?: string; onClose(): void }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const pending = useRef(initialInput);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "danger" | "muted" }>({ text: "Starting…", tone: "muted" });
 
   useEffect(() => {
@@ -29,8 +35,18 @@ export function InteractiveTerminal({ sessionId, onClose }: { sessionId: string;
 
     let terminalId: string | undefined;
     let disposed = false;
+    // A message to send once Claude Code's UI is up: when its output has settled for a moment.
+    let settle: ReturnType<typeof setTimeout> | undefined;
     const offData = api.on("terminal:data", (m) => {
-      if (m.terminalId === terminalId) term.write(m.data);
+      if (m.terminalId !== terminalId) return;
+      term.write(m.data);
+      if (!pending.current) return;
+      clearTimeout(settle);
+      settle = setTimeout(() => {
+        if (!pending.current || !terminalId) return;
+        void api.invoke("terminal:write", { terminalId, data: typedMessage(pending.current) });
+        pending.current = undefined;
+      }, 1500);
     });
     const offExit = api.on("terminal:exit", (m) => {
       if (m.terminalId !== terminalId) return;
@@ -70,6 +86,7 @@ export function InteractiveTerminal({ sessionId, onClose }: { sessionId: string;
 
     return () => {
       disposed = true;
+      clearTimeout(settle);
       if (terminalId) void api.invoke("terminal:close", { terminalId });
       offData();
       offExit();

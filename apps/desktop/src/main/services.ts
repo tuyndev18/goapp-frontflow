@@ -11,7 +11,7 @@ import {
   type ProjectProfile,
   type WorkflowRun,
 } from "@frontflow/domain";
-import type { AnyEvent } from "@frontflow/event-schema";
+import { redact, type AnyEvent } from "@frontflow/event-schema";
 import { RunnerClient, type RunnerPort } from "@frontflow/cli-adapters";
 import { DocumentError, snapshotDocument } from "@frontflow/document-parser";
 import { GoFigmaListener, findGoFigmaServer, type FigmaHandoff } from "@frontflow/figma-mcp-bridge";
@@ -25,6 +25,8 @@ import {
   createPersistentServices,
   createSessionRecorder,
   SkillLibrary,
+  PromptLibrary,
+  promptPlaceholders,
   type FeatureRunInputs,
   type GoFigmaService,
   type ImportedApiContract,
@@ -33,13 +35,15 @@ import {
 import type {
   ApprovalDto,
   CliStatus,
+  EventDto,
   FigmaStatusDto,
   ProjectSummary,
   RunStateDto,
+  SessionDto,
   SkillNodeDto,
 } from "../shared/ipc.js";
+import { createAccountsService } from "./accounts.js";
 import { AppError, type IpcHandlers, type PushBus } from "./ipc-gateway.js";
-import { createSessionHub, toEventDto } from "./sessions.js";
 import { SettingsStore } from "./settings.js";
 
 const TERMINAL_BUFFER = 256_000;
@@ -70,10 +74,11 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     rawLogs: settingsStore.get().rawTerminalLogs,
     rawLogRetentionDays: settingsStore.get().retentionDays,
   });
-  // Sessions started from the Sessions screen have no workflow run; the hub maps them to their project.
-  const recorder = createSessionRecorder(db, artifactStore, { standalone: (runId) => sessionHub.standalone(runId) });
+  const recorder = createSessionRecorder(db, artifactStore);
 
   // --- AI CLI runner in a utility process (spec §9.3) ---
+  const manualResumes = new Set<string>();
+  const manualSessions = new Set<string>();
   // Recent PTY output per terminal, so a pane attaching late (or after the step ended) still shows the screen.
   const terminalBuffers = new Map<string, string>();
   const openTerminals = new Set<string>();
@@ -81,27 +86,8 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
   const terminalExited = (terminalId: string, exitCode: number | null) => {
     openTerminals.delete(terminalId);
     bus.send("terminal:exit", { terminalId, exitCode });
-    sessionHub.onTerminalExit(terminalId, exitCode);
     for (const handler of terminalExitHandlers) handler(terminalId, exitCode);
   };
-  const sessionHub = createSessionHub({
-    db,
-    bus,
-    runner: () => requireRunner(),
-    openTerminal: async (input) => {
-      openTerminals.add(input.terminalId);
-      try {
-        return await requireRunner().openTerminal(input);
-      } catch (err) {
-        openTerminals.delete(input.terminalId);
-        throw err;
-      }
-    },
-    closeTerminal: (terminalId) => requireRunner().closeTerminal(terminalId),
-    isTerminalOpen: (terminalId) => openTerminals.has(terminalId),
-  });
-  // No CLI process survives an app restart.
-  sessionHub.interruptOpenSessions("FrontFlow was closed while this session was running");
   let runnerProcess: UtilityProcess | undefined;
   let runner: RunnerClient | undefined;
   const startRunner = () => {
@@ -110,8 +96,16 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     runner.subscribe((event) => {
       recorder.onEvent(event);
       bus.send("session:event", toEventDto(event));
-      // Sessions the engine does not drive (Sessions screen, manual follow-ups) are stored by the hub.
-      sessionHub.onAgentEvent(event);
+      // Follow-up chats started by the user are not driven by the engine: store and show them here.
+      if (event.type === "session.started" && event.payload.externalSessionId && manualResumes.has(event.payload.externalSessionId) && event.sessionId) {
+        manualSessions.add(event.sessionId);
+        manualResumes.delete(event.payload.externalSessionId);
+      }
+      if (event.sessionId && manualSessions.has(event.sessionId)) {
+        const safe = redact(event);
+        db.runStore.appendEvent(safe);
+        bus.send("run:event", toEventDto(safe));
+      }
     });
     runner.onTerminal((msg) => {
       if (msg.type === "terminal.data") {
@@ -121,7 +115,6 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         }
         terminalBuffers.set(msg.terminalId, buffered.length > TERMINAL_BUFFER ? buffered.slice(-TERMINAL_BUFFER) : buffered);
         bus.send("terminal:data", { terminalId: msg.terminalId, data: msg.data });
-        sessionHub.onTerminalData(msg.terminalId);
       } else terminalExited(msg.terminalId, msg.exitCode);
     });
     runner.onRaw((sessionId, chunk) => {
@@ -133,7 +126,6 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       runner?.dispose("Runner process exited");
       // Its PTYs died with it; interactive steps waiting on them fail like headless sessions do.
       for (const terminalId of [...openTerminals]) terminalExited(terminalId, null);
-      sessionHub.interruptOpenSessions("The AI CLI runner restarted; the session's process ended");
       // Crash recovery: sessions fail with PROCESS_EXITED and nodes retry within their budget.
       if (!disposed) startRunner();
     });
@@ -155,6 +147,26 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     } else {
       db.approvals.decide(r.id, event.outcome, { decidedBy: "user" });
     }
+  });
+
+  // --- Claude Code accounts of this machine (Accounts screen) ---
+  const accounts = createAccountsService({
+    dataDir,
+    bus,
+    openTerminal: async (input) => {
+      openTerminals.add(input.terminalId);
+      try {
+        return await requireRunner().openTerminal(input);
+      } catch (err) {
+        openTerminals.delete(input.terminalId);
+        throw err;
+      }
+    },
+    closeTerminal: (terminalId) => (openTerminals.has(terminalId) ? requireRunner().closeTerminal(terminalId) : Promise.resolve()),
+    onTerminalExit: (handler) => {
+      terminalExitHandlers.add(handler);
+      return () => terminalExitHandlers.delete(handler);
+    },
   });
 
   // --- GoApp Figma (spec §11.3, §13) ---
@@ -195,6 +207,14 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
   const firstLaunch = !existsSync(skillsDir);
   const skills = new SkillLibrary(skillsDir);
   if (firstLaunch) seedSkills();
+
+  // --- Prompts: every AI step is an editable prompt (shipped defaults + the user's edits) ---
+  const workflowsDir = findWorkflowsDir();
+  const prompts = new PromptLibrary({ defaultsDir: join(workflowsDir, "prompts"), userDir: join(dataDir, "prompts") });
+  const promptDto = (name: string) => {
+    const t = prompts.get(name);
+    return { ...t, placeholders: promptPlaceholders(t.defaultText || t.text) };
+  };
 
   // --- Workflow engine (spec §17) ---
   const nodeServices = createPersistentServices({
@@ -240,8 +260,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     },
     figma: goFigma,
     skills,
+    prompts,
     policy,
     approvals,
+    claudeProfileFor: (accountId) => accounts.claudeProfileFor(accountId),
     mcpConfigDir: join(dataDir, "mcp"),
     scratchDir: join(dataDir, "scratch"),
     settings: () => {
@@ -251,7 +273,6 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         commandTimeoutMs: 15 * 60_000,
         agentTimeoutMs: 30 * 60_000,
         fixBudget: 2,
-        interactiveAgents: s.interactiveAgents,
       };
     },
     probeProvider: async (baseUrl, signal) => {
@@ -300,7 +321,11 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     const state = await engine.getRunState(runId);
     const run = state?.run ?? db.runStore.getRun(runId);
     if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
-    const def = engine.getDefinition(run.workflowId, run.workflowVersion) ?? definition;
+    // A run made by an older workflow version keeps its own graph, so its node runs still line up.
+    const def =
+      engine.getDefinition(run.workflowId, run.workflowVersion) ??
+      db.workflowDefinitions.get<WorkflowDefinition>(run.workflowId, run.workflowVersion)?.definition ??
+      definition;
     const graph = toGraph(def);
     return {
       run: { ...run, ...(typeof run.inputs.title === "string" ? { title: run.inputs.title } : {}) },
@@ -377,6 +402,19 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     });
   }
 
+  function sessionDto(record: NonNullable<ReturnType<typeof db.aiSessions.get>>): SessionDto {
+    return {
+      id: record.id,
+      adapterId: record.adapterId,
+      ...(record.externalSessionId ? { externalSessionId: record.externalSessionId } : {}),
+      status: record.status === "completed" || record.status === "failed" || record.status === "cancelled" ? record.status : "running",
+      cwd: record.cwd,
+      startedAt: record.startedAt,
+      ...(record.workflowRunId ? { workflowRunId: record.workflowRunId } : {}),
+      ...(record.nodeRunId ? { nodeRunId: record.nodeRunId } : {}),
+    };
+  }
+
   const handlers: IpcHandlers = {
     "app:info": () => ({ name: "GoApp FrontFlow", version: app.getVersion(), platform: process.platform, dataDir }),
 
@@ -441,7 +479,11 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         snapshotIds: [],
         ...(pre.baseSha ? { gitBaseSha: pre.baseSha } : {}),
         title: req.title,
-        adapterId: await pickAdapter(),
+        // AI steps run only as interactive Claude Code sessions in a terminal (no headless CLI).
+        adapterId: "claude-code",
+        ...(req.claudeAccountId ? { claudeAccountId: req.claudeAccountId } : {}),
+        ...(req.model ? { model: req.model } : {}),
+        ...(req.effort ? { effort: req.effort } : {}),
         allowAssumptions: false,
       };
       const run = await engine.startRun({ projectId: project.id, definition, inputs });
@@ -523,8 +565,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       return { record, text: text.length > 500_000 ? `${text.slice(0, 500_000)}\n…truncated` : text };
     },
 
-    ...sessionHub.handlers,
+    "sessions:list": ({ projectId }) => db.aiSessions.listByProject(projectId, 200).map(sessionDto),
     "sessions:cancel": ({ sessionId }) => requireRunner().cancel(sessionId),
+    // No `sessions:send` / `sessions:resume`: a session continues only in its interactive
+    // terminal (`claude --resume` in a PTY, terminal:open), never as a headless `claude -p`.
     "sessions:rawLog": ({ sessionId }) => {
       const path = recorder.rawLogPath(sessionId);
       if (!path) return "";
@@ -594,6 +638,19 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       if (error) throw new AppError("OPEN_FAILED", error);
     },
 
+    "prompts:get": ({ name }) => promptDto(name),
+    "prompts:save": ({ name, text }) => {
+      if (!text.trim()) throw new AppError("EMPTY_PROMPT", "A prompt cannot be empty; reset it to the default instead");
+      prompts.save(name, text);
+      return promptDto(name);
+    },
+    "prompts:reset": ({ name }) => {
+      prompts.reset(name);
+      return promptDto(name);
+    },
+
+    ...accounts.handlers,
+
     "settings:get": () => settingsStore.get(),
     "settings:update": (patch) => {
       const settings = settingsStore.update(patch);
@@ -615,15 +672,6 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     db.runStore.deleteRun(run.id);
     artifactStore.applyRetention();
     rmSync(join(dataDir, "projects", run.projectId, "runs", run.id), { recursive: true, force: true });
-  }
-
-  /** Default AI CLI from Settings when installed, else the first installed one. */
-  async function pickAdapter(): Promise<string> {
-    const preferred = settingsStore.get().defaultAdapterId;
-    const detected = await requireRunner().detect().catch(() => []);
-    const installed = detected.filter((d) => d.detection.installed).map((d) => d.adapterId);
-    if (installed.includes(preferred) || installed.length === 0) return preferred;
-    return installed.find((id) => id !== "fake") ?? installed[0]!;
   }
 
   function uniqueProjectId(base: string, rootPath: string): string {
@@ -661,6 +709,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
   }
 
   function loadDefinition(): WorkflowDefinition {
+    return loadBuiltinWorkflows(workflowsDir);
+  }
+
+  function findWorkflowsDir(): string {
     const candidates = [
       process.env["FRONTFLOW_WORKFLOWS_DIR"],
       join(process.resourcesPath ?? "", "workflows"),
@@ -669,7 +721,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     ].filter((p): p is string => !!p);
     const dir = candidates.find((p) => existsSync(join(p, BUILTIN_WORKFLOW_FILES[0])));
     if (!dir) throw new Error(`Workflow definitions not found in ${candidates.join(", ")}`);
-    return loadBuiltinWorkflows(dir);
+    return dir;
   }
 
   let disposed = false;
@@ -685,10 +737,24 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       engine.shutdown();
       approvals.expireAll();
       figmaListener.stop();
+      accounts.dispose();
       runner?.dispose("App quitting");
       runnerProcess?.kill();
       db.close();
     },
+  };
+}
+
+function toEventDto(event: { id: string; type: string; timestamp: string; workflowRunId: string; nodeRunId?: string; sessionId?: string; confidence?: number; payload: unknown }): EventDto {
+  return {
+    id: event.id,
+    type: event.type,
+    timestamp: event.timestamp,
+    workflowRunId: event.workflowRunId,
+    ...(event.nodeRunId ? { nodeRunId: event.nodeRunId } : {}),
+    ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+    ...(event.confidence !== undefined ? { confidence: event.confidence } : {}),
+    payload: event.payload,
   };
 }
 

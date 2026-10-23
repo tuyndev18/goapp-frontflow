@@ -20,7 +20,7 @@ import { visualStateForNode } from "@frontflow/ui-components";
 import type { GraphNodeDto, RunStateDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
-import { formatDuration, stepDuration, type ActivityLine } from "../lib/activity.js";
+import { formatDuration, formatTime, stepDuration, type ActivityLine } from "../lib/activity.js";
 import { LANES, groupColor, groupOf, laneOf } from "../lib/groups.js";
 import { stepLook } from "../lib/steps.js";
 import { useTheme } from "../lib/theme.js";
@@ -102,6 +102,10 @@ export function GraphView({
   const { positions, lanes, width: graphWidth } = useMemo(() => layout(graph), [graph]);
   const labels = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n.label])), [graph.nodes]);
 
+  // Nodes are rebuilt every tick (`now`) without onNodesChange. A node object without `measured`
+  // makes React Flow drop its size and handle bounds and hide it until re-measured; when a rebuild
+  // lands right after a measurement the ResizeObserver never fires again and the canvas stays blank.
+  // Every node has a fixed size, so it is given up front and the handle bounds survive rebuilds.
   const nodes: Node<FlowNodeData | LaneData>[] = useMemo(
     () => [
       // Swimlane bands sit behind the steps and take no clicks.
@@ -110,6 +114,7 @@ export function GraphView({
           id: `lane:${l.id}`,
           type: "lane",
           position: { x: 0, y: l.y },
+          measured: { width: graphWidth, height: l.height },
           data: { color: l.color, width: graphWidth, height: l.height },
           zIndex: -1,
           selectable: false,
@@ -125,6 +130,7 @@ export function GraphView({
           id: n.id,
           type: "step",
           position: positions.get(n.id) ?? { x: 0, y: 0 },
+          measured: { width: NODE_W, height: NODE_H },
           data: {
             node: n,
             color: groupColor(groupOf(n)),
@@ -334,6 +340,14 @@ const StepNode = memo(function StepNode({ id, data }: NodeProps<Node<FlowNodeDat
           {data.node.ai ? <span className="ff-gnode-chip ff-gnode-chip-ai">AI</span> : null}
           {nr?.assumed ? <span className="ff-gnode-chip ff-gnode-chip-assumed" title="assumed">≈</span> : null}
           {nr && nr.attempt > 1 ? <span className="ff-gnode-chip">×{nr.attempt}</span> : null}
+          {data.duration !== undefined && nr?.startedAt ? (
+            <span
+              className="ff-gnode-chip ff-gnode-chip-time"
+              title={`Started ${formatTime(nr.startedAt)}${nr.finishedAt ? ` · finished ${formatTime(nr.finishedAt)}` : " · still running"}`}
+            >
+              ⏱ {formatDuration(data.duration)}
+            </span>
+          ) : null}
         </span>
       </div>
       {look.decision ? (
@@ -442,7 +456,7 @@ function actionFor(node: GraphNodeDto, nr: NodeRun | undefined, runId: string, o
     case "waiting_for_input":
       // Document import and Figma hand-off need their panels; plain gates continue in one click.
       if (node.type === "readiness.read_api" || node.type === "tests.read_ba" || node.type === "figma.design") return { label: "Provide input →", primary: true, run: open };
-      if (node.type === "readiness.map" || node.type === "tests.design")
+      if (node.type === "readiness.review" || node.type === "tests.design")
         return { label: "Accept gaps", primary: true, run: () => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: { accept: true } }), done: "Gaps accepted" };
       return { label: "Continue ▶", primary: true, run: () => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: {} }), done: `Continuing ${node.label}` };
     case "failed":

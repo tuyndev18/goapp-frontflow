@@ -4,6 +4,7 @@ import { StatusBadge, visualStateForRun } from "@frontflow/ui-components";
 import type { CliStatus, GitStatusDto, RunSummary } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+import { Loading } from "../components/Loading.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { DeleteProjectDialog } from "../components/DeleteProjectDialog.js";
 
@@ -82,7 +83,7 @@ export function ProjectOverview({ projectId }: { projectId: string }) {
     }
   }
 
-  if (!data) return <div className="ff-screen">Loading…</div>;
+  if (!data) return <Loading label="Loading project" screen />;
   const { project, profile, warnings } = data;
 
   return (

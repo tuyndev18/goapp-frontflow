@@ -229,12 +229,8 @@ export class SqliteRunStore implements RunStore {
     return compact({ output: fromJson<unknown>(row.output_json), assumed: intToBool(row.assumed) });
   }
 
-  /**
-   * Idempotent by event id. Payload is redacted again as defense in depth (DoD #12).
-   * `runless`: the event belongs to a session started outside any workflow run; its
-   * `workflowRunId` is a synthetic id and is not stored.
-   */
-  appendEvent(event: RunEventInput, options: { runless?: boolean } = {}): void {
+  /** Idempotent by event id. Payload is redacted again as defense in depth (DoD #12). */
+  appendEvent(event: RunEventInput): void {
     this.db
       .prepare(
         `INSERT INTO agent_events (id, workflow_run_id, node_run_id, session_id, type, timestamp, trace_id, confidence, payload_json)
@@ -243,7 +239,7 @@ export class SqliteRunStore implements RunStore {
       )
       .run({
         id: event.id,
-        workflowRunId: options.runless ? null : event.workflowRunId,
+        workflowRunId: event.workflowRunId,
         nodeRunId: nullable(event.nodeRunId),
         sessionId: nullable(event.sessionId),
         type: event.type,
@@ -284,21 +280,6 @@ export class SqliteRunStore implements RunStore {
       ? `SELECT * FROM (SELECT * FROM agent_events WHERE ${where.join(" AND ")} ORDER BY timestamp DESC, seq DESC LIMIT @limit) ORDER BY timestamp, seq`
       : `SELECT * FROM agent_events WHERE ${where.join(" AND ")} ORDER BY timestamp, seq LIMIT @limit`;
     return this.db.prepare(sql).all(params).map(toEvent);
-  }
-
-  /** Latest `limit` events of these sessions (whatever run they belong to), oldest first. */
-  listSessionEvents(sessionIds: string[], limit = 5000): StoredEvent[] {
-    if (sessionIds.length === 0) return [];
-    const params: SqlParams = { limit };
-    sessionIds.forEach((id, i) => (params[`s${i}`] = id));
-    const inList = sessionIds.map((_, i) => `@s${i}`).join(", ");
-    return this.db
-      .prepare(
-        `SELECT * FROM (SELECT * FROM agent_events WHERE session_id IN (${inList}) ORDER BY timestamp DESC, seq DESC LIMIT @limit)
-         ORDER BY timestamp, seq`,
-      )
-      .all(params)
-      .map(toEvent);
   }
 }
 
@@ -345,8 +326,7 @@ function toEvent(row: SqlRow): StoredEvent {
     id: String(row.id),
     type: String(row.type),
     timestamp: String(row.timestamp),
-    // Empty for events of sessions started outside a workflow run.
-    workflowRunId: str(row.workflow_run_id) ?? "",
+    workflowRunId: String(row.workflow_run_id),
     nodeRunId: str(row.node_run_id),
     sessionId: str(row.session_id),
     traceId: String(row.trace_id),

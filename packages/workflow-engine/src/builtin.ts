@@ -14,8 +14,9 @@ export function loadWorkflowFile(path: string): WorkflowDefinition {
 export function loadBuiltinWorkflows(dir: string): WorkflowDefinition {
   const parts = BUILTIN_WORKFLOW_FILES.map((file) => loadWorkflowFile(join(dir, file)));
   return composeWorkflows(FEATURE_DELIVERY_WORKFLOW_ID, "Feature delivery (UI → API review → integration ∥ BA tests)", parts, {
-    // v4: UI from Figma first; the API contract is reviewed against it when it arrives.
-    version: 4,
+    // v5: no project-analysis step; the API review compares the contract with the built UI; every AI step is an editable prompt.
+    // v6: no implementation gates (B2.quality_gates removed; AI steps run no build/typecheck/lint).
+    version: 6,
     description: "UI from Figma, review against the API contract when it arrives, API integration, and BA-driven acceptance tests composed into one run graph.",
   });
 }

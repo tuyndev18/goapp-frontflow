@@ -2,9 +2,9 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { EventDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
-import { formatTime } from "../lib/activity.js";
+import { formatTime, interactiveTerminalId } from "../lib/activity.js";
 import { Markdown } from "./Markdown.js";
-import { InteractiveTerminal } from "./InteractiveTerminal.js";
+import { InteractiveTerminal, typedMessage } from "./InteractiveTerminal.js";
 import { Terminal } from "./Terminal.js";
 
 type ChatItem =
@@ -20,35 +20,15 @@ const EMPTY: EventDto[] = [];
  * Readable view of an AI CLI conversation (instead of the raw stream-json),
  * with a composer to keep chatting in the same session and a button to take
  * over in the CLI's own interactive terminal.
- *
- * Events come from a workflow run (`runId`) or are given directly (`events`, Sessions
- * screen). `latestSessionId`/`latestEnded` override what the events alone can tell,
- * e.g. a session whose process ended with the app.
  */
-export function AiChat({
-  runId,
-  events: given,
-  nodeRunId,
-  sessionIds,
-  latestSessionId,
-  latestEnded,
-  onTakeOver,
-}: {
-  runId?: string;
-  events?: EventDto[];
-  nodeRunId?: string;
-  sessionIds?: string[];
-  latestSessionId?: string;
-  latestEnded?: boolean;
-  /** Replaces the built-in interactive terminal tab (e.g. a terminal that outlives this view). */
-  onTakeOver?(): void;
-}) {
-  const runEvents = useApp((s) => (runId ? (s.runEvents[runId] ?? EMPTY) : EMPTY));
-  const events = given ?? runEvents;
+export function AiChat({ runId, nodeRunId, sessionIds }: { runId: string; nodeRunId?: string; sessionIds?: string[] }) {
+  const events = useApp((s) => s.runEvents[runId] ?? EMPTY);
   const notify = useApp((s) => s.notify);
+  const [sent, setSent] = useState<Array<{ id: string; time: string; text: string; sessionId: string }>>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"chat" | "terminal" | "raw">("chat");
+  const [pendingInput, setPendingInput] = useState<string>();
   const scroller = useRef<HTMLDivElement>(null);
 
   const mine = useMemo(
@@ -56,25 +36,39 @@ export function AiChat({
     [events, nodeRunId, sessionIds],
   );
   const sessions = useMemo(() => [...new Set(mine.map((e) => e.sessionId!))], [mine]);
-  const lastSession = latestSessionId ?? sessions.at(-1);
-  const lastSessionEnded =
-    latestEnded ?? (!!lastSession && mine.some((e) => e.sessionId === lastSession && (e.type === "session.completed" || e.type === "session.failed")));
+  const lastSession = sessions.at(-1);
+  const lastSessionEnded = !!lastSession && mine.some((e) => e.sessionId === lastSession && (e.type === "session.completed" || e.type === "session.failed"));
 
-  // The user's messages are events too (stored by main when sent), so the order survives a reload.
-  const items = useMemo(() => buildChat(mine).sort((a, b) => a.time.localeCompare(b.time)), [mine]);
+  const items = useMemo(() => {
+    const list = buildChat(mine);
+    for (const m of sent) list.push({ kind: "user", id: m.id, time: m.time, text: m.text });
+    return list.sort((a, b) => a.time.localeCompare(b.time));
+  }, [mine, sent]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) el.scrollTop = el.scrollHeight;
   }, [items.length, items.at(-1)]);
 
+  // The step's live Claude Code terminal (tmux-style pane), if it is still open.
+  const lastNodeRun = mine.find((e) => e.sessionId === lastSession)?.nodeRunId;
+  const liveTerminal = !lastSessionEnded && lastNodeRun ? interactiveTerminalId(events, lastNodeRun) : undefined;
+
+  /**
+   * Messages go into Claude Code's own interactive UI, never to a headless CLI: typed into the
+   * running session's terminal, or — once it ended — into `claude --resume` opened in a terminal.
+   */
   async function send() {
     const text = draft.trim();
     if (!text || !lastSession) return;
     setBusy(true);
     try {
-      if (lastSessionEnded) await api.invoke("sessions:resume", { sessionId: lastSession, prompt: text });
-      else await api.invoke("sessions:send", { sessionId: lastSession, message: text });
+      if (liveTerminal) await api.invoke("terminal:write", { terminalId: liveTerminal, data: typedMessage(text) });
+      else {
+        setPendingInput(text);
+        setMode("terminal");
+      }
+      setSent((s) => [...s, { id: `local-${Date.now()}`, time: new Date().toISOString(), text, sessionId: lastSession }]);
       setDraft("");
     } catch (err) {
       notify("error", errorMessage(err));
@@ -90,14 +84,7 @@ export function AiChat({
       <div className="ff-chat-bar">
         <div className="ff-seg" role="tablist" aria-label="AI view">
           {(["chat", "terminal", "raw"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="tab"
-              aria-selected={mode === m}
-              className={`ff-seg-btn${mode === m ? " ff-seg-active" : ""}`}
-              onClick={() => (m === "terminal" && onTakeOver ? onTakeOver() : setMode(m))}
-            >
+            <button key={m} type="button" role="tab" aria-selected={mode === m} className={`ff-seg-btn${mode === m ? " ff-seg-active" : ""}`} onClick={() => setMode(m)}>
               {m === "chat" ? "💬 Chat" : m === "terminal" ? "⌨ Interactive terminal" : "Raw stream"}
             </button>
           ))}
@@ -107,7 +94,16 @@ export function AiChat({
         </span>
       </div>
 
-      {mode === "terminal" ? <InteractiveTerminal sessionId={lastSession} onClose={() => setMode("chat")} /> : null}
+      {mode === "terminal" ? (
+        <InteractiveTerminal
+          sessionId={lastSession}
+          {...(pendingInput ? { initialInput: pendingInput } : {})}
+          onClose={() => {
+            setPendingInput(undefined);
+            setMode("chat");
+          }}
+        />
+      ) : null}
       {mode === "raw" ? <Terminal sessionId={lastSession} /> : null}
       {mode === "chat" ? (
         <>
@@ -126,7 +122,7 @@ export function AiChat({
             <textarea
               className="ff-input"
               rows={2}
-              placeholder={lastSessionEnded ? "Continue this conversation with the AI… (resumes the session)" : "Message the running AI session…"}
+              placeholder={liveTerminal ? "Message the running Claude session (typed into its terminal)…" : "Continue this conversation… (reopens it in Claude Code's terminal)"}
               value={draft}
               aria-label="Message to the AI"
               onChange={(e) => setDraft(e.target.value)}
@@ -195,12 +191,7 @@ function buildChat(events: EventDto[]): ChatItem[] {
         items.push({ kind: "status", id: e.id, time: e.timestamp, text: `AI session started${typeof p["model"] === "string" ? ` · ${p["model"]}` : ""}`, tone: "info" });
         break;
       case "message.delta": {
-        if (typeof p["text"] !== "string" || !p["text"].trim()) break;
-        if (p["role"] === "user") {
-          items.push({ kind: "user", id: e.id, time: e.timestamp, text: p["text"] });
-          break;
-        }
-        if (p["role"] !== "assistant") break;
+        if (p["role"] !== "assistant" || typeof p["text"] !== "string" || !p["text"].trim()) break;
         const prev = items.at(-1);
         if (prev?.kind === "ai") prev.text += `\n\n${p["text"]}`;
         else items.push({ kind: "ai", id: e.id, time: e.timestamp, text: p["text"] });

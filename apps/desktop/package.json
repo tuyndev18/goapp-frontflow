@@ -5,6 +5,9 @@
   "description": "GoApp FrontFlow desktop application",
   "type": "module",
   "main": "./out/main/index.js",
+  "bin": {
+    "ffswap": "./bin/ffswap.mjs"
+  },
   "scripts": {
     "dev": "electron-vite dev --watch",
     "build": "electron-vite build",
@@ -12,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@frontflow/claude-accounts": "0.1.0",
     "@frontflow/cli-adapters": "0.1.0",
     "@frontflow/document-parser": "0.1.0",
     "@frontflow/domain": "0.1.0",
@@ -28,7 +32,10 @@
     "@xterm/xterm": "5.5.0",
     "@xyflow/react": "12.8.6",
     "dompurify": "3.4.17",
+    "github-markdown-css": "5.9.0",
+    "highlight.js": "11.11.1",
     "marked": "16.4.2",
+    "marked-highlight": "2.2.4",
     "react": "19.1.10",
     "react-dom": "19.1.10",
     "ws": "8.18.3",

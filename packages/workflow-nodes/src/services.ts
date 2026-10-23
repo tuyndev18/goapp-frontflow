@@ -3,6 +3,7 @@ import type { AgentEvent } from "@frontflow/event-schema";
 import type { ManagedSession, OpenTerminalInput, ResumeSessionInput, StartSessionInput } from "@frontflow/cli-adapters";
 import type { FigmaHandoff } from "@frontflow/figma-mcp-bridge";
 import type { ApprovalBroker, PolicyEngine } from "@frontflow/policy";
+import type { PromptSource } from "./prompt-library.js";
 import type { SkillSource } from "./skills.js";
 
 /**
@@ -24,11 +25,18 @@ export interface NodeServices {
   figma?: GoFigmaService;
   /** Skills the user attached to each workflow step; agent steps add them to the prompt. */
   skills?: SkillSource;
+  /** The editable prompt of every AI step (workflows/prompts defaults + the user's edits). */
+  prompts: PromptSource;
   policy: PolicyEngine;
   approvals: ApprovalBroker;
   settings(): HostSettings;
   /** Checks whether the real backend answers (provider verification, spec §15.1). */
   probeProvider?(baseUrl: string, signal: AbortSignal): Promise<boolean>;
+  /**
+   * The `CLAUDE_CONFIG_DIR` that runs Claude Code as a saved account (its own login, kept and
+   * renewed there by Claude Code); undefined: the machine's login is that account already.
+   */
+  claudeProfileFor?(accountId: string): Promise<string | undefined>;
   /** Directory for per-session MCP config files. */
   mcpConfigDir: string;
   /** Per-run working directories for AI steps that must not touch the project (e.g. document analysis). */
@@ -57,8 +65,6 @@ export interface HostSettings {
   agentTimeoutMs: number;
   /** Times the quality-gate node may ask the AI to diagnose and fix before reporting blocked. */
   fixBudget: number;
-  /** Run Claude Code steps as interactive TUI sessions (needs `terminals`) instead of `claude -p`. */
-  interactiveAgents?: boolean;
 }
 
 export interface ArtifactWriter {
@@ -112,6 +118,12 @@ export interface FeatureRunInputs {
   /** Selection pinned at creation; otherwise A.figma_scope waits for one pushed from the plugin. */
   figma?: { handoff: FigmaHandoff };
   adapterId: string;
+  /** Claude Code steps run as this saved account (its own config folder) instead of the machine's login. */
+  claudeAccountId?: string;
+  /** Model of every AI step (an alias such as `opus`, or a full model id); default: the CLI's own setting. */
+  model?: string;
+  /** Reasoning effort of every AI step: low | medium | high | xhigh | max; default: the CLI's own setting. */
+  effort?: string;
   allowAssumptions: boolean;
   /** Optional base URL of a running backend for provider verification. */
   providerBaseUrl?: string;

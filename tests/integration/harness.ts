@@ -11,10 +11,10 @@ import { ArtifactStore, openDatabase, type FrontflowDb } from "@frontflow/persis
 import { ApprovalBroker, PolicyEngine } from "@frontflow/policy";
 import { WorkflowEngine, loadBuiltinWorkflows, type WorkflowDefinition } from "@frontflow/workflow-engine";
 import {
-  createBeforeMutation,
   createBuiltinHandlers,
   createPersistentServices,
   createSessionRecorder,
+  PromptLibrary,
   type FeatureRunInputs,
   type ImportedApiContract,
   type ImportedBaSpec,
@@ -97,9 +97,9 @@ export async function createHarness(options: { aiFixture?: string } = {}): Promi
       subscribeAll: (handler) => sessions.subscribeAll(handler),
     },
     figma: { serverPath: () => undefined },
+    prompts: new PromptLibrary({ defaultsDir: join(REPO_ROOT, "workflows", "prompts"), userDir: join(dir, "prompts") }),
     policy,
     approvals,
-    worktreesRoot: join(dir, "worktrees"),
     mcpConfigDir: join(dir, "mcp"),
     scratchDir: join(dir, "scratch"),
     settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 60_000, agentTimeoutMs: 60_000, fixBudget: 1 }),
@@ -136,7 +136,6 @@ export async function createHarness(options: { aiFixture?: string } = {}): Promi
         store: db.runStore,
         handlers,
         sleep: async () => {},
-        beforeMutation: createBeforeMutation(services, (runId) => db.gitCheckpoints.latestForRun(runId)),
       });
       engine.registerDefinition(definition);
       engines.push(engine);

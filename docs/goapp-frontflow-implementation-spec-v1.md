@@ -7,17 +7,17 @@
 | Project name | **GoApp FrontFlow** |
 | Repository slug | `goapp-frontflow` |
 | Tài liệu | Product & Technical Implementation Specification |
-| Phiên bản | 0.3 |
+| Phiên bản | 0.4 |
 | Trạng thái | Draft for implementation |
-| Cập nhật | 2026-10-22 |
+| Cập nhật | 2026-10-23 |
 
 ## 1. Tóm tắt sản phẩm
 
-GoApp FrontFlow là desktop application gắn với một source-code project trên máy người dùng và sử dụng các AI CLI như Codex CLI, Claude Code hoặc Gemini CLI làm execution engine.
+GoApp FrontFlow là desktop application gắn với một source-code project trên máy người dùng và sử dụng các AI CLI như Codex CLI, Claude Code hoặc Gemini CLI làm execution engine. Về bản chất, FrontFlow là một lớp wrap: mở phiên tmux/terminal để gọi AI agent code trực tiếp trong folder project, điều phối từng bước và thu thập kết quả; không tạo worktree hay branch riêng.
 
 Ứng dụng không thay thế AI CLI và không phải một workflow builder tổng quát như n8n. GoApp FrontFlow cung cấp:
 
-- Workflow chuẩn hóa cho quá trình Figma × API Contract → frontend implementation, đồng thời dùng BA Specification để sinh và chạy automated acceptance tests.
+- Workflow chuẩn hóa: dựng giao diện từ Figma trước, khi có API Contract thì rà soát UI với contract rồi ghép API, đồng thời dùng BA Specification để sinh và chạy automated acceptance tests.
 - Giao diện node graph kiểu n8n để theo dõi tiến độ.
 - Quản lý và khôi phục nhiều AI CLI session theo project.
 - Thu thập prompt, log, file diff, test result và evidence.
@@ -67,25 +67,25 @@ GoApp FrontFlow là desktop application gắn với một source-code project tr
 1. **AI CLI là execution engine:** app điều phối, không tái xây dựng coding agent.
 2. **Evidence before completion:** không báo hoàn thành nếu chưa có bằng chứng kiểm chứng.
 3. **Explicit uncertainty:** mọi suy luận phải được đánh dấu `assumed`, không được giả làm fact.
-4. **FE readiness first:** Figma và API Contract là hai nguồn chính để quyết định feature đã đủ điều kiện triển khai hay chưa.
+4. **UI first, API when ready:** giao diện được dựng từ Figma ngay, không chờ API Contract; khi có contract, Figma × API Contract quyết định feature đã đủ điều kiện ghép API hay chưa.
 5. **BA as test oracle:** BA Specification là nguồn sinh business acceptance/E2E test cases, không phải trục audit trực tiếp BA ↔ API.
 6. **Versioned inputs:** mỗi workflow run gắn với snapshot BA, API, Figma và Git commit cụ thể.
-7. **Recoverable execution:** mọi thay đổi code phải có checkpoint và khả năng rollback.
+7. **Recoverable execution:** agent sửa code trực tiếp trong folder project; mọi bước sửa code có checkpoint là git snapshot ẩn và khả năng rollback, không đụng branch của người dùng.
 8. **Structured events:** dashboard không phụ thuộc hoàn toàn vào việc parse text terminal.
 9. **Project convention first:** code sinh ra phải sử dụng pattern và component của project hiện tại.
 10. **Human control remains available:** người dùng có thể pause, cancel, retry hoặc can thiệp tại bất kỳ node nào.
 
 ## 4. Phạm vi workflow
 
-GoApp FrontFlow sử dụng ba workflow nghiệp vụ chính.
+GoApp FrontFlow sử dụng ba workflow nghiệp vụ chính. Thứ tự chạy: B1 (UI từ Figma) → A (rà soát với API Contract khi có) → B2 (ghép API), song song với C (BA tests).
 
 ### Workflow A — FE Readiness: Figma × API Contract
 
-Trích xuất UI flow từ Figma, xác định nhu cầu dữ liệu/action/state của từng interaction và map với API Contract. Kết quả cho biết FE đã đủ điều kiện triển khai hay còn thiếu thiết kế/API.
+Khi API Contract sẵn sàng và UI đã được dựng, trích xuất UI flow từ Figma, xác định nhu cầu dữ liệu/action/state của từng interaction và map với API Contract. Kết quả cho biết UI đã dựng có đủ API để ghép hay còn thiếu thiết kế/API. API Contract có thể đến muộn và không chặn việc dựng UI.
 
 ### Workflow B — UI Implementation & API Integration
 
-Triển khai presentational UI, ghép API, xử lý loading/empty/error/permission và chạy automated tests dựa trên FE Readiness Package.
+B1: triển khai presentational UI từ Figma ngay (mock data, chưa cần API). B2: sau khi có FE Readiness Package thì ghép API vào UI đã dựng, xử lý loading/empty/error/permission và chạy automated tests.
 
 ### Workflow C — BA-driven Test Design & Auto-test
 
@@ -118,23 +118,29 @@ flowchart TB
     START([Create frontend feature workflow])
     START --> PROJECT[Analyze current project]
     START --> FIGMA[Connect Figma MCP and select scope]
-    START --> API[/Upload API Contract.md or OpenAPI/]
+    START --> API[/Upload API Contract.md or OpenAPI — whenever it is ready/]
     START --> BA[/Upload BA Spec.md/]
 
-    subgraph A["A · FE Readiness — Figma × API"]
-        FIGMA --> UI_FLOW[Extract screens, actions and UI states]
+    subgraph B1["B1 · Build UI from Figma (no API needed)"]
+        FIGMA --> UI_CODE[AI agent implements presentational UI with mock data]
+        PROJECT --> UI_CODE
+        UI_CODE --> UI_CHECK[Build, typecheck, lint and a11y checks]
+    end
+
+    subgraph A["A · Review the built UI against the API Contract"]
+        UI_CHECK --> UI_FLOW[Extract screens, actions and UI states]
+        API --> UI_FLOW
         API --> API_MODEL[Normalize API operations and schemas]
         UI_FLOW --> UI_NEEDS[Derive data and action requirements]
         UI_NEEDS --> MAP[Map UI interaction to API operation]
         API_MODEL --> MAP
-        MAP --> READY{Enough to implement?}
+        MAP --> READY{Enough to integrate?}
         READY -- Missing API --> API_GAP[API Gap Report]
         READY -- Missing Design --> DESIGN_GAP[Design Gap Report]
         READY -- Partial or Conflict --> GAP[Readiness Gap Report]
-        API_GAP --> WAIT_UPDATE[Wait for update]
+        API_GAP --> WAIT_UPDATE[Wait for update or accept gaps]
         DESIGN_GAP --> WAIT_UPDATE
         GAP --> WAIT_UPDATE
-        WAIT_UPDATE --> FIGMA
         WAIT_UPDATE --> API
         READY -- Ready or FE-only --> READINESS[FE Readiness Package]
     end
@@ -149,12 +155,8 @@ flowchart TB
         TESTABLE -- Yes --> TEST_CASES[Acceptance Test Case Package]
     end
 
-    subgraph B["B · UI Implementation & API Integration"]
-        READINESS --> PLAN[Create implementation plan]
-        PROJECT --> PLAN
-        PLAN --> CHECKPOINT[Create Git checkpoint or worktree]
-        CHECKPOINT --> UI_CODE[Implement presentational UI]
-        UI_CODE --> API_BIND[Implement API client and bindings]
+    subgraph B2["B2 · API Integration"]
+        READINESS --> API_BIND[Implement API client and bindings in the built UI]
         API_BIND --> STATES[Loading, empty, error and permission states]
         STATES --> TESTS[Component, contract and integration tests]
         TESTS --> QUALITY[Build, typecheck, lint, visual and a11y checks]
@@ -176,6 +178,8 @@ flowchart TB
         REPORT --> DONE([Completed])
     end
 ```
+
+Mọi bước sửa code (B1, B2, C2) do AI agent thực hiện ngay trong folder project đang mở; FrontFlow chỉ mở phiên tmux/terminal để gọi agent và ghi lại một git snapshot ẩn (`refs/frontflow/<run>`) trước/sau mỗi bước. Không tạo worktree hay branch riêng.
 
 ## 6. Definition of statuses
 
@@ -394,7 +398,6 @@ qualityGates:
   e2e: required
   accessibility: WCAG-2.2-AA
 git:
-  executionMode: worktree
   defaultBaseBranch: main
 ```
 
@@ -729,7 +732,7 @@ AI gọi MCP theo nhu cầu để giảm context size.
 
 1. Nhận `FeReadinessPackage` đã đạt policy.
 2. Phân tích component, design token, API client và test convention trong project.
-3. Tạo Git checkpoint hoặc worktree.
+3. Ghi Git checkpoint (snapshot ẩn) của folder project.
 4. Triển khai presentational UI từ Figma.
 5. Sinh hoặc sử dụng API client hiện có.
 6. Bind query/mutation vào interaction tương ứng.
@@ -1048,15 +1051,13 @@ Mỗi artifact cần `contentHash`, `mimeType`, `source`, `createdAt` và `reten
 - Ghi lại base commit SHA.
 - Kiểm tra branch và working tree.
 - Không ghi đè thay đổi có sẵn của người dùng.
-- Khuyến nghị chạy workflow trong worktree hoặc branch riêng.
+- AI agent làm việc trực tiếp trong folder project đang mở; không tạo worktree hay branch riêng. Khuyến nghị commit hoặc stash thay đổi của người dùng trước để xem riêng thay đổi của AI.
 - Chụp diff trước và sau mỗi mutation node.
 
 ### 19.2. Concurrency
 
-- Mặc định chỉ một mutation node được ghi vào cùng worktree tại một thời điểm.
+- Chỉ một mutation node được ghi vào folder project tại một thời điểm.
 - Read-only analysis nodes có thể chạy song song.
-- Nếu cho phép nhiều agent code song song, mỗi agent dùng worktree riêng.
-- Merge giữa worktree là một node explicit, không phải side effect ẩn.
 
 ### 19.3. Rollback
 
@@ -1167,7 +1168,7 @@ type PermissionClass =
 ### 22.3. Default policy
 
 - Read project: allow after project selection.
-- Write project: allow only inside active worktree/root.
+- Write project: allow only inside the project root.
 - Run known scripts: allow according to project profile.
 - Arbitrary shell command: log and evaluate policy.
 - Destructive action: always require explicit approval in MVP.
@@ -1211,7 +1212,7 @@ Mọi AI CLI adapter phải chạy cùng một contract suite:
 - SQLite migrations and persistence.
 - PTY runner với fake CLI fixture.
 - Figma MCP bridge với fake plugin.
-- Git worktree/checkpoint lifecycle.
+- Git snapshot checkpoint lifecycle trong folder project.
 - Figma selection + API upload → FE Readiness Package.
 - BA Spec + FE Readiness Package → Acceptance Test Case Package.
 - Generated test code → execution result → traceability evidence.
@@ -1332,7 +1333,7 @@ Mọi AI CLI adapter phải chạy cùng một contract suite:
 - FE Readiness Package và Gap Reports.
 - UI implementation và API integration.
 - BA-driven acceptance/E2E test generation.
-- Git checkpoint/worktree safety.
+- Git snapshot checkpoint safety.
 - Test command runner.
 - Evidence report.
 
@@ -1362,7 +1363,7 @@ MVP được coi là hoàn thành khi:
 3. Người dùng kết nối GoApp Figma plugin, chọn scope và upload API Contract.
 4. Workflow A trích xuất UI Flow Model và tạo `FeReadinessPackage` có source references.
 5. Workflow A phân biệt được `Missing API`, `Missing Design`, `Partial`, `Conflict`, `FE-only` và `Ambiguous`.
-6. Một AI CLI triển khai UI và ghép API trong worktree an toàn từ `FeReadinessPackage`.
+6. Một AI CLI triển khai UI từ Figma trong folder project, sau đó ghép API từ `FeReadinessPackage` khi có API Contract, với checkpoint snapshot cho từng bước.
 7. Component, consumer contract, integration, visual và accessibility gates được thực thi.
 8. Workflow C chuyển BA requirements thành acceptance test cases và tự động chạy trên feature đã tích hợp.
 9. Dashboard hiển thị trạng thái từng node và có thể resume sau khi restart.
@@ -1375,7 +1376,7 @@ MVP được coi là hoàn thành khi:
 Các quyết định này không chặn Phase 0 nhưng phải chốt trước phase tương ứng:
 
 1. AI CLI đầu tiên được hỗ trợ chính thức.
-2. Dùng worktree mặc định hay branch trong current checkout.
+2. ~~Dùng worktree mặc định hay branch trong current checkout.~~ Đã chốt: agent làm trong current checkout, checkpoint là git snapshot ẩn; không worktree, không branch.
 3. Cách plugin Figma hiện tại kết nối với local bridge.
 4. Contract testing library theo stack project.
 5. Cơ chế visual diff và ngưỡng sai lệch.

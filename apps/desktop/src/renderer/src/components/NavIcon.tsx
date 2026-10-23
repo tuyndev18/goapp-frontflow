@@ -1,12 +1,14 @@
 /** 16px stroke icons for the sidebar (they carry the nav when it is collapsed to icons only). */
 const PATHS = {
   projects: <path d="M2.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" />,
-  sessions: (
+  accounts: (
     <>
-      <rect x="2" y="3" width="12" height="10" rx="1.5" />
-      <path d="m5 6.5 2 1.5-2 1.5M8.5 10H11" />
+      <circle cx="6" cy="5.5" r="2.3" />
+      <path d="M1.8 13c.5-2.3 2.2-3.5 4.2-3.5s3.7 1.2 4.2 3.5" />
+      <path d="M10.6 3.6a2.2 2.2 0 0 1 0 4M12.2 9.8c1.1.5 1.8 1.6 2 3.2" />
     </>
   ),
+  usage: <path d="M2.5 13.5h11M4.5 11V8M8 11V4M11.5 11V6.5" />,
   skills: <path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8l4.2-1.3z" />,
   overview: (
     <>

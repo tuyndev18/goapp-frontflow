@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, utimesSync, writeSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 
@@ -97,12 +97,21 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+export interface DirLockOptions {
+  timeoutMs?: number;
+  /** A lock untouched for this long belongs to a crashed holder and is taken over. */
+  staleMs?: number;
+  /** How often the holder refreshes the lock's mtime so others don't think it stale. */
+  touchMs?: number;
+}
+
 /**
- * Cross-process lock: a directory created exclusively. A lock older than `staleMs` (crashed
- * holder) is broken. Never held across network calls.
+ * Cross-process lock in the `proper-lockfile` style Claude Code uses: a directory created
+ * exclusively, its mtime kept fresh while held, taken over when stale. Takeovers are
+ * serialized through a sibling `.takeover` directory so two waiters never both break it.
  */
-export async function withLock<T>(lockDir: string, fn: () => Promise<T> | T, options: { timeoutMs?: number; staleMs?: number } = {}): Promise<T> {
-  const timeoutMs = options.timeoutMs ?? 10_000;
+export async function acquireDirLock(lockDir: string, options: DirLockOptions = {}): Promise<() => void> {
+  const timeoutMs = options.timeoutMs ?? 9_000;
   const staleMs = options.staleMs ?? 30_000;
   const started = Date.now();
   mkdirSync(dirname(lockDir), { recursive: true });
@@ -113,17 +122,52 @@ export async function withLock<T>(lockDir: string, fn: () => Promise<T> | T, opt
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
       const age = Date.now() - (mtimeMs(lockDir) ?? Date.now());
-      if (age > staleMs) {
-        rmSync(lockDir, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() - started > timeoutMs) throw new AccountFsError("LOCKED", "Another account operation is in progress");
-      await new Promise((r) => setTimeout(r, 50));
+      if (age > staleMs && takeOver(lockDir)) continue;
+      if (Date.now() - started > timeoutMs) throw new AccountFsError("LOCKED", `Lock ${lockDir} is held by another process`);
+      await new Promise((r) => setTimeout(r, 40 + Math.random() * 60));
     }
   }
+  const toucher = setInterval(() => {
+    try {
+      const now = new Date();
+      utimesSync(lockDir, now, now);
+    } catch {
+      // lost: release below tolerates it
+    }
+  }, options.touchMs ?? 3_000);
+  toucher.unref?.();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    clearInterval(toucher);
+    rmSync(lockDir, { recursive: true, force: true });
+  };
+}
+
+function takeOver(lockDir: string): boolean {
+  const guard = `${lockDir}.takeover`;
+  try {
+    mkdirSync(guard);
+  } catch {
+    // Another waiter is taking over; a guard left by a crash expires after 5 s.
+    if (Date.now() - (mtimeMs(guard) ?? Date.now()) > 5_000) rmSync(guard, { recursive: true, force: true });
+    return false;
+  }
+  try {
+    rmSync(lockDir, { recursive: true, force: true });
+    return true;
+  } finally {
+    rmSync(guard, { recursive: true, force: true });
+  }
+}
+
+/** Runs `fn` holding the lock. Never hold one across network calls. */
+export async function withLock<T>(lockDir: string, fn: () => Promise<T> | T, options: DirLockOptions = {}): Promise<T> {
+  const release = await acquireDirLock(lockDir, { timeoutMs: 10_000, ...options });
   try {
     return await fn();
   } finally {
-    rmSync(lockDir, { recursive: true, force: true });
+    release();
   }
 }

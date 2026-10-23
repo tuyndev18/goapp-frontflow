@@ -56,6 +56,8 @@ export interface StartSessionInput {
   workflowRunId: string;
   nodeRunId?: string;
   model?: string;
+  /** Reasoning effort: low | medium | high | xhigh | max (Claude Code's `--effort`). */
+  effort?: string;
   systemPrompt?: string;
   mcpConfigPath?: string;
   /** Extra env for the CLI. Secrets (API keys) go here — never in argv (spec §9.3). */

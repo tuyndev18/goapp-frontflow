@@ -8,7 +8,8 @@ export type Screen =
   | { name: "new-run"; projectId: string }
   | { name: "run"; projectId: string; runId: string; nodeId?: string }
   | { name: "matrix"; projectId: string; runId: string }
-  | { name: "sessions"; projectId?: string }
+  | { name: "accounts" }
+  | { name: "usage" }
   | { name: "skills"; nodeId?: string }
   | { name: "settings" };
 

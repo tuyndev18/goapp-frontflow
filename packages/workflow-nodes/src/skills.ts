@@ -22,12 +22,10 @@ const RENAMED_STEPS: Record<string, string> = {
   "B2.business_ui": "B2.ui_states",
   "C.api_integration": "B2.api_binding",
   "C.bind_ui_states": "B2.ui_states",
-  "C.quality_gates": "B2.quality_gates",
   // v3 (readiness before UI)
   "B.implement_ui": "B1.implement_ui",
   "B.api_binding": "B2.api_binding",
   "B.ui_states": "B2.ui_states",
-  "B.quality_gates": "B2.quality_gates",
 };
 const IGNORED_DIRS = new Set([".git", "node_modules"]);
 const MAX_SKILL_FILES = 200;

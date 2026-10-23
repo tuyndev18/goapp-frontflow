@@ -682,30 +682,39 @@ describe("built-in feature-delivery workflow", () => {
     const handlers: Record<string, NodeHandler> = {};
     for (const node of definition.nodes) handlers[node.type] = pass({ node: node.id });
     let waitedOnce = false;
-    handlers["readiness.map"] = handler((_ctx, input) => {
+    handlers["readiness.review"] = handler((_ctx, input) => {
       if (!input.providedInput && !waitedOnce) {
         waitedOnce = true;
         return { status: "waiting_for_input", prompt: "UIR-002 has no API operation; update the API contract" };
       }
       return { status: "passed", output: { readiness: "ready" } };
     });
+    handlers["readiness.read_api"] = handler((_ctx, input) =>
+      input.providedInput ? { status: "passed", output: { operations: [] } } : { status: "waiting_for_input", prompt: "Import the API contract" },
+    );
     handlers["tests.read_ba"] = handler((_ctx, input) =>
       input.providedInput ? { status: "passed", output: { requirements: [] } } : { status: "waiting_for_input", prompt: "Import the BA specification" },
     );
     const { engine } = setup(handlers, { maxConcurrency: 3 });
     const run = await engine.startRun({ projectId: "p", inputs: INPUTS, definition });
 
-    const waiting = await engine.waitForRun(run.id);
-    expect(waiting.run.status).toBe("waiting");
-    // Project analysis runs in parallel with A; implementation waits for the readiness gate.
-    expect(statusOf(waiting, "B.prepare_project")).toBe("passed");
-    expect(nodeOf(waiting, "B.implement_ui").waitingOn).toEqual(["A.readiness"]);
+    // No API contract yet: the UI is still built from Figma; the review waits for the contract.
+    const noContract = await engine.waitForRun(run.id);
+    expect(noContract.run.status).toBe("waiting");
+    expect(statusOf(noContract, "B1.implement_ui")).toBe("passed");
+    expect(nodeOf(noContract, "A.review").waitingOn).toEqual(["A.api_contract"]);
 
-    await engine.provideInput(run.id, "A.readiness", { accept: true });
-    // Without a BA spec, B still completes and the run is only test_design_pending (spec §11.1).
+    await engine.provideInput(run.id, "A.api_contract", { api: { snapshotId: "s" } });
+    const gate = await engine.waitForRun(run.id);
+    expect(gate.run.status).toBe("waiting");
+    // API integration waits for the readiness gate.
+    expect(nodeOf(gate, "B2.api_binding").waitingOn).toEqual(["A.review"]);
+
+    await engine.provideInput(run.id, "A.review", { accept: true });
+    // Without a BA spec, B2 still completes and the run is only test_design_pending (spec §11.1).
     const pending = await engine.waitForRun(run.id);
     expect(pending.run.status).toBe("test_design_pending");
-    expect(statusOf(pending, "B.quality_gates")).toBe("passed");
+    expect(statusOf(pending, "B2.ui_states")).toBe("passed");
     expect(nodeOf(pending, "C2.generate_tests").waitingOn).toEqual(["C1.test_design"]);
 
     await engine.provideInput(run.id, "C1.ba_spec", { ba: { snapshotId: "s" } });

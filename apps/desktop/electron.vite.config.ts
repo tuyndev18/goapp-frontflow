@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 
 // Workspace packages ship TypeScript sources, so they must be bundled rather than externalized.
 const workspacePackages = [
+  "@frontflow/claude-accounts",
   "@frontflow/cli-adapters",
   "@frontflow/document-parser",
   "@frontflow/domain",

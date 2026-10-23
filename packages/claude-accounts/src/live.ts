@@ -1,18 +1,40 @@
 import { createHash } from "node:crypto";
+import { existsSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { accountCredentials, FileCredentialStore, type LiveCredentialStore } from "./credential-store.js";
 import { readJsonObject } from "./fsx.js";
 import type { ClaudePaths, LoginSnapshot, OAuthAccountInfo, OAuthCredentials } from "./types.js";
 
-/** Claude Code's own rule: `CLAUDE_CONFIG_DIR` moves the config folder and the global config file with it. */
+/**
+ * Claude Code's own rule: `CLAUDE_CONFIG_DIR` moves the config folder and the global config
+ * file with it; a non-empty legacy `<config>/.config.json` still wins over `.claude.json`.
+ */
 export function resolveClaudePaths(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): ClaudePaths {
   const custom = env["CLAUDE_CONFIG_DIR"]?.trim();
   const configDir = custom || join(home, ".claude");
+  const legacy = join(configDir, ".config.json");
+  const modern = custom ? join(custom, ".claude.json") : join(home, ".claude.json");
+  let globalConfigFile = modern;
+  try {
+    const st = statSync(legacy);
+    if (st.isFile() && (st.size > 0 || !existsSync(modern))) globalConfigFile = legacy;
+  } catch {
+    // no legacy file
+  }
+  return { configDir, credentialsFile: join(configDir, ".credentials.json"), globalConfigFile, projectsDir: join(configDir, "projects") };
+}
+
+/**
+ * Locks Claude Code itself takes (proper-lockfile directories): its token refresh holds the
+ * first two, its config writes the third. Holding them while we write means a switch never
+ * interleaves with a refresh that would write the old account back.
+ */
+export function claudeLockPaths(paths: ClaudePaths): { refresh: string; legacy: string; config: string } {
   return {
-    configDir,
-    credentialsFile: join(configDir, ".credentials.json"),
-    globalConfigFile: custom ? join(custom, ".claude.json") : join(home, ".claude.json"),
-    projectsDir: join(configDir, "projects"),
+    refresh: join(paths.configDir, ".oauth_refresh.lock"),
+    legacy: `${paths.configDir}.lock`,
+    config: `${paths.globalConfigFile}.lock`,
   };
 }
 
@@ -29,8 +51,8 @@ export interface LiveLogin {
 }
 
 /** Reads the login the `claude` CLI uses right now. Throws only on malformed files. */
-export function readLiveLogin(paths: ClaudePaths, now: () => Date = () => new Date()): LiveLogin {
-  const credentials = readJsonObject(paths.credentialsFile);
+export function readLiveLogin(paths: ClaudePaths, now: () => Date = () => new Date(), store: LiveCredentialStore = new FileCredentialStore(paths)): LiveLogin {
+  const credentials = store.read();
   const config = readJsonObject(paths.globalConfigFile);
   const identity = isObject(config?.["oauthAccount"]) ? (config["oauthAccount"] as OAuthAccountInfo) : undefined;
   const oauth = credentials?.["claudeAiOauth"];
@@ -39,6 +61,7 @@ export function readLiveLogin(paths: ClaudePaths, now: () => Date = () => new Da
   return {
     snapshot: {
       claudeAiOauth: oauth,
+      credentials: accountCredentials(credentials!),
       ...(organizationUuid ? { organizationUuid } : {}),
       ...(identity ? { oauthAccount: identity } : {}),
       capturedAt: now().toISOString(),

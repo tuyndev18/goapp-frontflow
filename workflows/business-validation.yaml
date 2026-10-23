@@ -3,14 +3,14 @@
 # mapping only, never from the implementation, so it runs in parallel with workflow B.
 # A missing BA spec does not block implementation: C1.ba_spec waits with the softer run status
 # test_design_pending (spec §11.1). C1.test_design waits for input on blocking testability gaps.
-# C2 generates test code once the feature passed its implementation gates, runs it, and sends
+# C2 generates test code once the UI states are in, runs it, and sends
 # implementation/test-generation failures through a bounded AI fix loop; specification, design
 # and API gaps end blocked with evidence.
 id: business-validation
-version: 4
+version: 6
 name: BA-driven Test Design & Auto-test
 description: Generate acceptance test cases from the BA specification, then generate, run and trace them against the integrated feature.
-requires: [A.ui_flow, A.readiness, B2.quality_gates]
+requires: [A.review, B2.ui_states]
 defaults:
   timeoutMs: 600000
   retryPolicy:
@@ -23,7 +23,7 @@ nodes:
     type: tests.read_ba
     label: Read BA specification
     group: C1
-    description: Import the BA specification (Markdown); the AI extracts business scenarios, preconditions, test data and expected outcomes with line references.
+    description: Import the BA specification (Markdown); it is saved into the project and the agent (editable prompt) extracts business scenarios, preconditions, test data and expected outcomes with line references.
     readOnly: false
     timeoutMs: 2400000
     config:
@@ -40,8 +40,8 @@ nodes:
     type: tests.design
     label: Design acceptance tests
     group: C1
-    description: Map every business scenario to the UI flow, Figma nodes and API operations and produce the Acceptance Test Case Package; untestable scenarios go to the testability gap report.
-    dependencies: [C1.ba_spec, A.ui_flow, A.readiness]
+    description: The agent (editable prompt) maps every business scenario to the reviewed screens and API operations and produces the Acceptance Test Case Package; untestable scenarios go to the testability gap report.
+    dependencies: [C1.ba_spec, A.review]
     # Not cacheable: the user may accept testability gaps through provideInput.
     readOnly: false
     timeoutMs: 2400000
@@ -59,7 +59,7 @@ nodes:
     label: AI generates auto-tests
     group: C2
     description: Write component, integration and E2E test code for the acceptance test cases with the project's test framework.
-    dependencies: [C1.test_design, B2.quality_gates]
+    dependencies: [C1.test_design, B2.ui_states]
     config:
       ai: true
     mutation: true
@@ -68,7 +68,7 @@ nodes:
       maxAttempts: 3
       backoff: exponential
       baseDelayMs: 5000
-      retryableErrors: [VALIDATION_FAILED, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
 
   - id: C2.run_tests
     type: test.acceptance
