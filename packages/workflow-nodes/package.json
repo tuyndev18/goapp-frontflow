@@ -1,0 +1,25 @@
+{
+  "name": "@frontflow/workflow-nodes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Built-in handlers for the BA/API alignment, Figma UI and feature integration workflows",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@frontflow/cli-adapters": "0.1.0",
+    "@frontflow/document-parser": "0.1.0",
+    "@frontflow/domain": "0.1.0",
+    "@frontflow/event-schema": "0.1.0",
+    "@frontflow/figma-mcp-bridge": "0.1.0",
+    "@frontflow/git-adapter": "0.1.0",
+    "@frontflow/policy": "0.1.0",
+    "@frontflow/project-analyzer": "0.1.0",
+    "@frontflow/workflow-engine": "0.1.0",
+    "@frontflow/persistence": "0.1.0",
+    "yaml": "2.8.1"
+  }
+}

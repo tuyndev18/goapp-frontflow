@@ -1,0 +1,27 @@
+{
+  "name": "sample-orders-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/check.mjs dev",
+    "build": "node scripts/check.mjs build",
+    "typecheck": "node scripts/check.mjs typecheck",
+    "lint": "node scripts/check.mjs lint",
+    "test": "node scripts/check.mjs test",
+    "test:e2e": "node scripts/check.mjs e2e"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@tanstack/react-query": "^5.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "@playwright/test": "^1.55.0"
+  }
+}

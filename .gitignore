@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+.vite/
+*.sqlite
+*.sqlite-journal
+coverage/
+.frontflow-tmp/
+test-results/

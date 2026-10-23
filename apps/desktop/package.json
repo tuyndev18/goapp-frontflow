@@ -1,0 +1,48 @@
+{
+  "name": "@frontflow/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GoApp FrontFlow desktop application",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev --watch",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@frontflow/cli-adapters": "0.1.0",
+    "@frontflow/document-parser": "0.1.0",
+    "@frontflow/domain": "0.1.0",
+    "@frontflow/event-schema": "0.1.0",
+    "@frontflow/figma-mcp-bridge": "0.1.0",
+    "@frontflow/git-adapter": "0.1.0",
+    "@frontflow/persistence": "0.1.0",
+    "@frontflow/policy": "0.1.0",
+    "@frontflow/project-analyzer": "0.1.0",
+    "@frontflow/ui-components": "0.1.0",
+    "@frontflow/workflow-engine": "0.1.0",
+    "@frontflow/workflow-nodes": "0.1.0",
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "@xyflow/react": "12.8.6",
+    "dompurify": "3.4.17",
+    "marked": "16.4.2",
+    "react": "19.1.10",
+    "react-dom": "19.1.10",
+    "ws": "8.18.3",
+    "yaml": "2.8.1",
+    "zod": "3.25.76",
+    "zustand": "5.0.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "@types/react": "19.1.17",
+    "@types/react-dom": "19.1.11",
+    "@vitejs/plugin-react": "4.7.0",
+    "electron": "37.10.3",
+    "electron-vite": "4.0.1",
+    "vite": "7.3.7"
+  }
+}

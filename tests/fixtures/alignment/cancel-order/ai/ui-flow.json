@@ -1,0 +1,48 @@
+{
+  "screens": [
+    {
+      "id": "SCR-cancel-order-modal",
+      "name": "Cancel Order Modal",
+      "kind": "dialog",
+      "figmaNodeIds": ["123:456"],
+      "actions": [
+        { "id": "ACT-confirm-cancel", "label": "Confirm cancellation", "trigger": "click", "figmaNodeId": "123:456" },
+        { "id": "ACT-close", "label": "Keep order", "trigger": "click", "figmaNodeId": "123:456" }
+      ],
+      "states": [
+        { "id": "ST-default", "name": "default", "kind": "default", "designed": true, "figmaNodeId": "123:456" },
+        { "id": "ST-loading", "name": "cancelling", "kind": "loading", "designed": true, "figmaNodeId": "123:456" },
+        { "id": "ST-error", "name": "cannot cancel", "kind": "error", "designed": true, "figmaNodeId": "123:456" },
+        { "id": "ST-success", "name": "cancelled", "kind": "success", "designed": true, "figmaNodeId": "123:456" }
+      ],
+      "transitions": [],
+      "confidence": 0.9
+    }
+  ],
+  "requirements": [
+    {
+      "id": "UIR-001",
+      "uiFlowNodeId": "SCR-cancel-order-modal",
+      "kind": "query",
+      "description": "Show the order number and current status in the modal",
+      "requiredFields": ["orderId", "status"],
+      "expectedOutcomes": ["order status shown", "order not found message"]
+    },
+    {
+      "id": "UIR-002",
+      "uiFlowNodeId": "SCR-cancel-order-modal",
+      "kind": "mutation",
+      "description": "Cancel the order when the customer confirms",
+      "requiredFields": ["orderId", "reason"],
+      "expectedOutcomes": ["status becomes CANCELLED", "order cannot be cancelled message", "order not found message"]
+    },
+    {
+      "id": "UIR-003",
+      "uiFlowNodeId": "SCR-cancel-order-modal",
+      "kind": "validation",
+      "description": "Cancellation reason is at most 500 characters",
+      "requiredFields": ["reason"],
+      "expectedOutcomes": ["inline validation message"]
+    }
+  ]
+}

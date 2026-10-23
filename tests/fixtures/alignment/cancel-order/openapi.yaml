@@ -1,0 +1,97 @@
+# Order API — machine-readable contract
+openapi: 3.0.3
+info:
+  title: Order API
+  version: 1.0.0
+security:
+  - bearerAuth: []
+paths:
+  /orders/{orderId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      operationId: cancelOrder
+      summary: Cancel a pending order
+      x-roles: [CUSTOMER, SUPPORT]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Order cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelledOrder"
+        "404":
+          $ref: "#/components/responses/OrderNotFound"
+        "409":
+          description: Order is not cancellable
+          x-error-code: ORDER_CANNOT_BE_CANCELLED
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Get order details
+      description: "Returns the order details. Allowed roles: CUSTOMER, SUPPORT"
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/OrderNotFound"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    OrderNotFound:
+      description: Order not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            code: ORDER_NOT_FOUND
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    CancelledOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [CANCELLED]
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, CANCELLED, SHIPPED]

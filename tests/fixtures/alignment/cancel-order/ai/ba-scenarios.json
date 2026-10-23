@@ -1,0 +1,86 @@
+{
+  "actors": [
+    "Customer",
+    "Support agent"
+  ],
+  "requirements": [
+    {
+      "id": "BA-ORDER-001",
+      "title": "Customer cancels a pending order",
+      "actor": "Customer",
+      "preconditions": [
+        "Order status is PENDING"
+      ],
+      "actions": [
+        "Confirm cancellation"
+      ],
+      "outcomes": [
+        "Order status becomes CANCELLED"
+      ],
+      "validations": [
+        "Cancellation reason is at most 500 characters"
+      ],
+      "states": [
+        "PENDING",
+        "CANCELLED"
+      ],
+      "errors": [
+        "ORDER_NOT_FOUND",
+        "ORDER_CANNOT_BE_CANCELLED"
+      ],
+      "acceptanceCriteria": [
+        {
+          "given": [
+            "a PENDING order owned by the customer"
+          ],
+          "when": [
+            "the customer confirms cancellation"
+          ],
+          "then": [
+            "the order status becomes CANCELLED"
+          ]
+        }
+      ],
+      "lines": [
+        13,
+        23
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "BA-ORDER-002",
+      "title": "Customer views order details",
+      "actor": "Customer",
+      "preconditions": [],
+      "actions": [
+        "Open the order detail page"
+      ],
+      "outcomes": [
+        "Order details including the current status are displayed"
+      ],
+      "validations": [],
+      "states": [],
+      "errors": [
+        "ORDER_NOT_FOUND"
+      ],
+      "acceptanceCriteria": [
+        {
+          "given": [
+            "an order that does not exist"
+          ],
+          "when": [
+            "the customer opens the detail page"
+          ],
+          "then": [
+            "ORDER_NOT_FOUND is shown"
+          ]
+        }
+      ],
+      "lines": [
+        24,
+        29
+      ],
+      "confidence": 0.95
+    }
+  ]
+}
