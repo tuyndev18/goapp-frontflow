@@ -44,7 +44,7 @@ nodes:
     config:
       ai: true
     mutation: true
-    timeoutMs: 2400000
+    timeoutMs: 0 # AI step: no time limit
     retryPolicy:
       maxAttempts: 3
       backoff: exponential
@@ -60,7 +60,7 @@ nodes:
     config:
       ai: true
     mutation: true
-    timeoutMs: 2400000
+    timeoutMs: 0 # AI step: no time limit
     retryPolicy:
       maxAttempts: 3
       backoff: exponential
@@ -89,7 +89,7 @@ nodes:
     config:
       ai: true
     mutation: true
-    timeoutMs: 2400000
+    timeoutMs: 0 # AI step: no time limit
     retryPolicy:
       maxAttempts: 3
       backoff: exponential

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { app, dialog, shell, utilityProcess, type UtilityProcess } from "electron";
 import {
   newId,
@@ -31,6 +31,8 @@ import {
   type GoFigmaService,
   type ImportedApiContract,
   type ImportedBaSpec,
+  type ImportedBatch,
+  type ImportedOpsGuide,
 } from "@frontflow/workflow-nodes";
 import type {
   ApprovalDto,
@@ -266,6 +268,8 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     claudeProfileFor: (accountId) => accounts.claudeProfileFor(accountId),
     mcpConfigDir: join(dataDir, "mcp"),
     scratchDir: join(dataDir, "scratch"),
+    // Removed with the run (deleteRun).
+    runFilesDir,
     settings: () => {
       const s = settingsStore.get();
       return {
@@ -489,10 +493,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       const run = await engine.startRun({ projectId: project.id, definition, inputs });
       return runState(run.id);
     },
-    "runs:importDocuments": async ({ runId, nodeId, ba, api }) => {
+    "runs:importDocuments": async ({ runId, nodeId, ba, api, ops }) => {
       const run = db.runStore.getRun(runId);
       if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
-      const snapshot = (type: "ba_markdown" | "api_markdown" | "openapi", doc: { name: string; content: string }) => {
+      const snapshot = (type: "ba_markdown" | "api_markdown" | "ops_markdown" | "openapi", doc: { name: string; content: string }) => {
         try {
           const { snapshot: snap, text } = snapshotDocument({ type, content: doc.content, sourceUri: doc.name });
           artifactStore.saveSnapshotContent(run.projectId, snap, text);
@@ -502,17 +506,24 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
           throw err;
         }
       };
-      let imported: ImportedApiContract | ImportedBaSpec;
+      // Every upload stays recorded (its snapshots are kept); the step only reads the latest one.
+      const previous = toBatches((db.runStore.listNodeRuns(runId).find((n) => n.nodeId === nodeId)?.output as { history?: unknown } | undefined)?.history);
+      const importedAt = nowIso();
+      let imported: ImportedApiContract | ImportedBaSpec | ImportedOpsGuide;
       if (api) {
-        const apiSnap = snapshot(api.kind === "openapi" ? "openapi" : "api_markdown", api);
-        imported = { api: { snapshotId: apiSnap.id, sourceUri: api.name, kind: api.kind } };
+        const documents = api.map((doc) => ({ snapshotId: snapshot(doc.kind === "openapi" ? "openapi" : "api_markdown", doc).id, sourceUri: doc.name, kind: doc.kind }));
+        imported = { api: documents, history: [...previous, { importedAt, documents: documents.map(({ snapshotId, sourceUri }) => ({ snapshotId, sourceUri })) }] };
       } else if (ba) {
-        const baSnap = snapshot("ba_markdown", ba);
-        imported = { ba: { snapshotId: baSnap.id, sourceUri: ba.name } };
+        const documents = ba.map((doc) => ({ snapshotId: snapshot("ba_markdown", doc).id, sourceUri: doc.name }));
+        imported = { ba: documents, history: [...previous, { importedAt, documents }] };
+      } else if (ops) {
+        const documents = ops.map((doc) => ({ snapshotId: snapshot("ops_markdown", doc).id, sourceUri: doc.name }));
+        imported = { ops: documents, history: [...previous, { importedAt, documents }] };
       } else {
         throw new AppError("INVALID_INPUT", "No document to import");
       }
-      await engine.provideInput(runId, nodeId, imported as unknown as Record<string, unknown>);
+      // A waiting step continues with it; a finished one runs again, and so do the steps after it.
+      await engine.retryNode(runId, nodeId, imported as unknown as Record<string, unknown>);
     },
     "runs:list": ({ projectId }) =>
       db.runStore.listRuns({ projectId, limit: 100 }).map((r: WorkflowRun) => ({
@@ -531,29 +542,36 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     "runs:pause": async ({ runId }) => void (await engine.pause(runId)),
     "runs:resume": async ({ runId }) => void (await engine.resume(runId)),
     "runs:cancel": async ({ runId }) => void (await engine.cancel(runId)),
-    "runs:retryNode": async ({ runId, nodeId }) => void (await engine.retryNode(runId, nodeId)),
+    "runs:retryNode": async ({ runId, nodeId, input }) => void (await engine.retryNode(runId, nodeId, input)),
     "runs:provideInput": async ({ runId, nodeId, data }) => void (await engine.provideInput(runId, nodeId, data)),
     "runs:events": ({ runId, nodeRunId, limit }) =>
       db.runStore.listEvents(runId, { ...(nodeRunId ? { nodeRunId } : {}), limit, latest: true }).map((e) => toEventDto(e)),
-    "runs:traceability": ({ runId }) => {
-      const latest = (name: string) => db.artifacts.listByRun(runId).filter((a) => a.relativePath.endsWith(name)).at(-1);
-      const read = <T>(name: string): T | null => {
-        const record = latest(name);
-        return record ? (JSON.parse(artifactStore.readText(record.id)) as T) : null;
-      };
-      return {
-        readiness: read("fe-readiness-package.json"),
-        tests: read("acceptance-test-cases.json"),
-        trace: read("traceability.json"),
-      };
-    },
-    "runs:gapReport": ({ runId }) => {
+    "runs:reports": ({ runId }) => {
+      const run = db.runStore.getRun(runId);
+      if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
       const artifacts = db.artifacts.listByRun(runId);
-      const reports = ["readiness-gap-report.md", "testability-gap-report.md"]
-        .map((name) => artifacts.filter((a) => a.relativePath.endsWith(name)).at(-1))
-        .filter((a): a is NonNullable<typeof a> => !!a)
-        .map((a) => artifactStore.readText(a.id));
-      return reports.length ? reports.join("\n\n---\n\n") : null;
+      return REPORT_FILES.flatMap(({ name, title }) => {
+        const record = artifacts.filter((a) => a.relativePath.endsWith(name)).at(-1);
+        return record ? [{ name, title, text: artifactStore.readText(record.id), path: join(runFilesDir(run.projectId, run.id), name) }] : [];
+      });
+    },
+    "runs:revealFile": ({ runId, path, artifactId }) => {
+      const run = db.runStore.getRun(runId);
+      if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
+      let file: string;
+      if (artifactId) {
+        const record = db.artifacts.listByRun(runId).find((a) => a.id === artifactId);
+        if (!record) throw new AppError("NOT_FOUND", `Unknown artifact ${artifactId}`);
+        file = artifactStore.resolvePath(record);
+      } else {
+        const root = runFilesDir(run.projectId, run.id);
+        file = resolve(root, path ?? "");
+        // Only the run's own workflow files: the path comes from the renderer.
+        const back = relative(root, file);
+        if (!back || back.startsWith("..") || isAbsolute(back)) throw new AppError("INVALID_PATH", `${path} is not one of the run's files`);
+      }
+      if (!existsSync(file)) throw new AppError("NOT_FOUND", `${file} no longer exists`);
+      shell.showItemInFolder(file);
     },
     "runs:artifacts": ({ runId, nodeRunId }) => db.artifacts.list({ workflowRunId: runId, ...(nodeRunId ? { nodeRunId } : {}) }),
     "runs:readArtifact": ({ artifactId }) => {
@@ -591,6 +609,25 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         cwd: record.cwd,
         cols,
         rows,
+      });
+      return { terminalId, command: opened.command };
+    },
+    "terminal:openFeature": async ({ runId, cols, rows }) => {
+      const run = db.runStore.getRun(runId);
+      if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
+      const project = requireProject(run.projectId);
+      if (!existsSync(project.rootPath)) throw new AppError("NOT_FOUND", `Project folder ${project.rootPath} no longer exists`);
+      // Same Claude account as the run's AI steps, so its usage and login match theirs.
+      const accountId = typeof run.inputs.claudeAccountId === "string" ? run.inputs.claudeAccountId : undefined;
+      const configDir = accountId ? await accounts.claudeProfileFor(accountId) : undefined;
+      const terminalId = newId("term");
+      const opened = await requireRunner().openTerminal({
+        terminalId,
+        adapterId: typeof run.inputs.adapterId === "string" ? run.inputs.adapterId : "claude-code",
+        cwd: project.rootPath,
+        cols,
+        rows,
+        ...(configDir ? { env: { CLAUDE_CONFIG_DIR: configDir } } : {}),
       });
       return { terminalId, command: opened.command };
     },
@@ -672,6 +709,31 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     db.runStore.deleteRun(run.id);
     artifactStore.applyRetention();
     rmSync(join(dataDir, "projects", run.projectId, "runs", run.id), { recursive: true, force: true });
+  }
+
+  /** A document step's upload history; runs imported before uploads held several files recorded one document per entry. */
+  function toBatches(history: unknown): ImportedBatch[] {
+    if (!Array.isArray(history)) return [];
+    return history.flatMap((entry): ImportedBatch[] => {
+      const e = entry as Partial<ImportedBatch> & { snapshotId?: string; sourceUri?: string };
+      if (Array.isArray(e.documents) && typeof e.importedAt === "string") return [{ importedAt: e.importedAt, documents: e.documents }];
+      if (typeof e.snapshotId === "string" && typeof e.importedAt === "string") return [{ importedAt: e.importedAt, documents: [{ snapshotId: e.snapshotId, ...(e.sourceUri ? { sourceUri: e.sourceUri } : {}) }] }];
+      return [];
+    });
+  }
+
+  /** The run's Markdown reports, in workflow order (written by the AI steps and the evidence report). */
+  const REPORT_FILES = [
+    { name: "api-review.md", title: "UI vs API review" },
+    { name: "ba-scenarios.md", title: "BA scenarios" },
+    { name: "test-design.md", title: "Test design" },
+    { name: "acceptance-tests.md", title: "Acceptance tests" },
+    { name: "evidence-report.md", title: "Evidence report" },
+  ];
+
+  /** The run's workflow files (documents, AI reports): inside the run's data folder, so deleteRun removes them. */
+  function runFilesDir(projectId: string, runId: string): string {
+    return join(dataDir, "projects", projectId, "runs", runId, "files");
   }
 
   function uniqueProjectId(base: string, rootPath: string): string {

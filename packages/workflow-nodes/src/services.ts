@@ -41,6 +41,11 @@ export interface NodeServices {
   mcpConfigDir: string;
   /** Per-run working directories for AI steps that must not touch the project (e.g. document analysis). */
   scratchDir: string;
+  /**
+   * The run's workflow files (imported documents, the AI steps' Markdown reports), kept in the
+   * tool's data per project and run — never in the user's project.
+   */
+  runFilesDir(projectId: string, runId: string): string;
 }
 
 export interface StoredSnapshot {
@@ -97,14 +102,42 @@ export interface TerminalBackend {
   claudeConfigDir: string;
 }
 
-/** provideInput payload for A.api_contract: a snapshot created by the host from the uploaded contract. */
-export interface ImportedApiContract {
-  api: { snapshotId: string; sourceUri?: string; kind: "markdown" | "openapi" };
+export interface ImportedDocument {
+  snapshotId: string;
+  sourceUri?: string;
 }
 
-/** provideInput payload for C1.ba_spec: a snapshot created by the host from the uploaded BA specification. */
+export type ImportedApiDocument = ImportedDocument & { kind: "markdown" | "openapi" };
+
+/**
+ * provideInput payload for A.api_contract: the latest upload, one or more documents (snapshots the
+ * host created from the uploaded files). Only this upload is used; earlier ones stay in `history`.
+ * A single document (not an array) comes from runs imported before uploads held several files.
+ */
+export interface ImportedApiContract {
+  api: ImportedApiDocument[] | ImportedApiDocument;
+  /** Every upload into the step, oldest first; the last one is `api`. */
+  history?: ImportedBatch[];
+}
+
+/** provideInput payload for C1.ba_spec: the latest upload of the BA specification, one or more documents. */
 export interface ImportedBaSpec {
-  ba: { snapshotId: string; sourceUri?: string };
+  ba: ImportedDocument[] | ImportedDocument;
+  /** Every upload into the step, oldest first; the last one is `ba`. */
+  history?: ImportedBatch[];
+}
+
+/** provideInput payload for C2.ops_guide: the latest upload of the feature's test operations guide (e.g. CMS how-to). */
+export interface ImportedOpsGuide {
+  ops: ImportedDocument[];
+  /** Every upload into the step, oldest first; the last one is `ops`. */
+  history?: ImportedBatch[];
+}
+
+/** One upload into a document step: the files it held. */
+export interface ImportedBatch {
+  importedAt: string;
+  documents: ImportedDocument[];
 }
 
 /** Run inputs recorded at run creation (see apps/desktop RunService). */
@@ -113,8 +146,8 @@ export interface FeatureRunInputs {
   gitBaseSha?: string;
   title?: string;
   /** Documents can be pinned at creation or imported later into C1.ba_spec / A.api_contract. */
-  ba?: ImportedBaSpec["ba"];
-  api?: ImportedApiContract["api"];
+  ba?: ImportedDocument;
+  api?: ImportedApiDocument;
   /** Selection pinned at creation; otherwise A.figma_scope waits for one pushed from the plugin. */
   figma?: { handoff: FigmaHandoff };
   adapterId: string;

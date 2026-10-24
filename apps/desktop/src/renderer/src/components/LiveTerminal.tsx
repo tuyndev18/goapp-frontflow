@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { api } from "../api.js";
+import { allowClipboardKeys, writeTerminal } from "../lib/terminalInput.js";
 
 /**
  * Attaches to a PTY that is already running in the CLI runner (an interactive workflow step):
@@ -24,6 +25,7 @@ export function LiveTerminal({ terminalId }: { terminalId: string }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(hostRef.current);
+    allowClipboardKeys(term);
     fit.fit();
 
     let open = false;
@@ -48,7 +50,7 @@ export function LiveTerminal({ terminalId }: { terminalId: string }) {
       else term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
     });
     const input = term.onData((data) => {
-      if (open) void api.invoke("terminal:write", { terminalId, data }).catch(() => undefined);
+      if (open) void writeTerminal(terminalId, data).catch(() => undefined);
     });
     const resize = term.onResize(({ cols, rows }) => {
       if (open) void api.invoke("terminal:resize", { terminalId, cols, rows }).catch(() => undefined);

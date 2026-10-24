@@ -504,7 +504,6 @@ describe("WorkflowEngine control operations", () => {
     const failed = await engine.waitForRun(run.id);
     expect(failed.run.status).toBe("failed");
     expect(statusOf(failed, "tests")).toBe("blocked");
-    await expect(engine.retryNode(run.id, "side")).rejects.toThrow(/only failed or blocked/);
 
     healthy = true;
     await engine.retryNode(run.id, "api");
@@ -514,6 +513,86 @@ describe("WorkflowEngine control operations", () => {
     expect(state.run.finishedAt).toBeDefined();
     expect(nodeOf(state, "api")).toMatchObject({ status: "passed", attempt: 1 });
     expect(nodeOf(state, "tests").blockerSummary).toBeUndefined();
+  });
+
+  it("runs a passed node again and resets the dependents built from its old output", async () => {
+    let reviews = 0;
+    const seen: unknown[] = [];
+    const { engine } = setup({
+      review: handler(() => ({ status: "passed", output: { review: ++reviews } })),
+      bind: handler((_ctx, input) => {
+        seen.push(input.upstream["review"]);
+        return { status: "passed", output: null };
+      }),
+      side: pass(),
+    });
+    const run = await engine.startRun({
+      projectId: "p",
+      inputs: INPUTS,
+      definition: workflow([spec("review"), spec("bind", { dependencies: ["review"] }), spec("side")]),
+    });
+    expect((await engine.waitForRun(run.id)).run.status).toBe("completed");
+
+    await engine.retryNode(run.id, "review");
+    const state = await engine.waitForRun(run.id);
+    expect(state.run.status).toBe("completed");
+    expect(nodeOf(state, "review").output).toEqual({ review: 2 });
+    expect(seen).toEqual([{ review: 1 }, { review: 2 }]);
+    await expect(engine.retryNode(run.id, "missing")).rejects.toThrow(/no node missing/);
+  });
+
+  it("runs a node again with newer input and drops what its dependents were given", async () => {
+    const docs: unknown[] = [];
+    const gates: unknown[] = [];
+    const { engine } = setup({
+      read: handler((_ctx, input) => {
+        docs.push(input.providedInput);
+        return input.providedInput ? { status: "passed", output: input.providedInput } : { status: "waiting_for_input", prompt: "Import the document" };
+      }),
+      review: handler((_ctx, input) => {
+        gates.push(input.providedInput);
+        return input.providedInput ? { status: "passed", output: null } : { status: "waiting_for_input", prompt: "Accept gaps?" };
+      }),
+    });
+    const run = await engine.startRun({ projectId: "p", inputs: INPUTS, definition: workflow([spec("read"), spec("review", { dependencies: ["read"] })]) });
+    await engine.waitForRun(run.id);
+    await engine.provideInput(run.id, "read", { doc: "v1" });
+    await engine.waitForRun(run.id);
+    await engine.provideInput(run.id, "review", { accept: true });
+    expect((await engine.waitForRun(run.id)).run.status).toBe("completed");
+
+    await engine.retryNode(run.id, "read", { doc: "v2" });
+    const state = await engine.waitForRun(run.id);
+    expect(nodeOf(state, "read").output).toEqual({ doc: "v2" });
+    // The gap accepted for v1 is not carried over to the review of v2.
+    expect(statusOf(state, "review")).toBe("waiting_for_input");
+    expect(docs).toEqual([undefined, { doc: "v1" }, { doc: "v2" }]);
+    expect(gates).toEqual([undefined, { accept: true }, undefined]);
+
+    // Running the node again without new input keeps the latest document.
+    await engine.retryNode(run.id, "read");
+    await engine.waitForRun(run.id);
+    expect(docs.at(-1)).toEqual({ doc: "v2" });
+  });
+
+  it("loads a finished run back to run a node again, but not while a dependent is running", async () => {
+    const store = new InMemoryRunStore();
+    const definition = workflow([spec("review"), spec("bind", { dependencies: ["review"] })]);
+    const first = setup({ review: pass({ v: 1 }), bind: pass() }, { store });
+    const run = await first.engine.startRun({ projectId: "p", inputs: INPUTS, definition });
+    await first.engine.waitForRun(run.id);
+    first.engine.shutdown();
+
+    const gate = deferred();
+    const second = setup({ review: pass({ v: 2 }), bind: handler(async () => (await gate.promise, { status: "passed", output: null })) }, { store });
+    second.engine.registerDefinition(definition);
+    await second.engine.retryNode(run.id, "review");
+    await waitUntil(async () => statusOf((await second.engine.getRunState(run.id))!, "bind") === "running");
+    await expect(second.engine.retryNode(run.id, "review")).rejects.toThrow(/bind depends on review and is still running/);
+    gate.resolve();
+    const state = await second.engine.waitForRun(run.id);
+    expect(state.run.status).toBe("completed");
+    expect(nodeOf(state, "review").output).toEqual({ v: 2 });
   });
 });
 

@@ -62,10 +62,6 @@ export async function saveArtifact(
   return id;
 }
 
-export function json(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
 /**
  * The project folder the AI agents work in. FrontFlow only drives the agents there; checkpoints
  * are hidden git snapshots, never branches or worktrees.

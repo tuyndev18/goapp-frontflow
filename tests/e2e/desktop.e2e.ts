@@ -137,13 +137,15 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     await page.getByRole("button", { name: "All activity", exact: true }).click();
     await expect(page.getByRole("log")).toContainText("Saved api.md", { timeout: 60_000 });
     await expect(runStatus(page)).toHaveAttribute("aria-label", /Completed with assumptions/, { timeout: 180_000 });
-    await expect(page.getByRole("log")).toContainText("reviewed by AI");
+    await expect(page.getByRole("log")).toContainText("UI vs API review written to");
     await expect(page.getByRole("log")).toContainText("AI finished");
     await expect(page.getByRole("log")).toContainText("Contract-only");
     if (shots) await page.screenshot({ path: join(shots, "2-run-activity.png") });
 
+    // The review is a short Markdown report, shown as the step result.
     await step(page, "AI reviews UI vs API").click();
-    await expect(page.getByRole("region", { name: "FE readiness verdict" })).toContainText("3 of 3 UI needs ready to implement (100%)");
+    await expect(page.getByText(/Modal huỷ đơn có đủ dữ liệu/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open in folder" })).toBeVisible();
     if (shots) await page.screenshot({ path: join(shots, "5-verdict.png") });
     await step(page, "AI implements UI").click();
     await expect(page.getByRole("log")).toContainText("Checkpoint");
@@ -180,7 +182,7 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     if (shots) await page.screenshot({ path: join(shots, "7-interactive-terminal.png") });
     await page.getByRole("button", { name: "Close terminal" }).click();
 
-    await step(page, "Traceability & evidence").click();
+    await step(page, "Evidence report").click();
     await page.getByRole("tab", { name: /Evidence/ }).click();
     await expect(page.getByRole("button", { name: /evidence-report\.md/ })).toBeVisible();
 
@@ -195,10 +197,10 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     if (shots) await page.screenshot({ path: join(shots, "4-graph.png"), animations: "disabled" });
     if (shots) await canvas.screenshot({ path: join(shots, "4b-canvas.png"), animations: "disabled" });
 
-    await page.getByRole("button", { name: "Traceability matrix" }).click();
-    await expect(page.getByText("Cancel Order Modal").first()).toBeVisible();
-    await page.getByRole("tab", { name: "BA ↔ tests" }).click();
-    await expect(page.getByText("TC-BA-ORDER-001-01").first()).toBeVisible();
+    await page.getByRole("button", { name: "Reports" }).click();
+    await expect(page.getByText(/Modal huỷ đơn có đủ dữ liệu/)).toBeVisible();
+    await page.getByRole("tab", { name: "Test design" }).click();
+    await expect(page.getByText(/TC-BA-ORDER-001-01/).first()).toBeVisible();
   } finally {
     await app.close();
   }

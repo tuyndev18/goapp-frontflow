@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ClaudeCodeAdapter, CodexCliAdapter, FakeCliAdapter, TerminalManager, loadNodePty } from "../src/index.js";
@@ -16,6 +19,14 @@ describe("interactive launch", () => {
     expect(new ClaudeCodeAdapter().interactiveLaunch({ newSessionId: "9d6f…" })).toMatchObject({ args: ["--session-id", "9d6f…"] });
     // Resuming wins over naming.
     expect(new ClaudeCodeAdapter().interactiveLaunch({ externalSessionId: "abc", newSessionId: "x" })).toMatchObject({ args: ["--resume", "abc"] });
+  });
+
+  it("leaves out a project settings file Claude would stop on", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ff-claude-settings-"));
+    expect(new ClaudeCodeAdapter().interactiveLaunch({ cwd })).toMatchObject({ args: [] });
+    mkdirSync(join(cwd, ".claude"));
+    writeFileSync(join(cwd, ".claude", "settings.local.json"), JSON.stringify({ permissions: { allow: ["*", "Bash(npm run *)"] } }));
+    expect(new ClaudeCodeAdapter().interactiveLaunch({ cwd, externalSessionId: "abc" })).toMatchObject({ args: ["--resume", "abc", "--setting-sources", "user,project"] });
   });
 
   it("gives the PTY the allow-listed environment only", async () => {

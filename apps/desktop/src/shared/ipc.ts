@@ -2,9 +2,7 @@ import { z } from "zod";
 import type {
   AcceptanceTestCasePackage,
   ArtifactRecord,
-  FeReadinessPackage,
   TestTraceabilityItem,
-  UiApiTraceabilityItem,
   NodeRun,
   PolicyDecision,
   Project,
@@ -21,6 +19,8 @@ import type { FigmaHandoff } from "@frontflow/figma-mcp-bridge";
 
 const id = z.string().min(1).max(200).regex(/^[A-Za-z0-9_.:\-]+$/);
 const MAX_DOC_BYTES = 2 * 1024 * 1024;
+/** Files in one upload into a document step. */
+export const MAX_UPLOAD_FILES = 20;
 const skillName = z.string().trim().min(1).max(64);
 
 export const uploadedDocumentSchema = z.object({
@@ -53,26 +53,33 @@ export const requestSchemas = {
     /** Claude Code `--effort`; default: Claude Code's own. */
     effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   }),
-  // One document per step: the API contract for A.api_contract, the BA specification for C1.ba_spec.
+  // One upload (one or more files) into a document step: the API contract for A.api_contract, the BA
+  // specification for C1.ba_spec, the test operations guide for C2.ops_guide. The step only uses its latest
+  // upload; it (and the steps after it) runs again.
   "runs:importDocuments": z
     .object({
       runId: id,
       nodeId: id,
-      ba: uploadedDocumentSchema.optional(),
-      api: uploadedDocumentSchema.extend({ kind: z.enum(["markdown", "openapi"]).default("markdown") }).optional(),
+      ba: z.array(uploadedDocumentSchema).min(1).max(MAX_UPLOAD_FILES).optional(),
+      api: z.array(uploadedDocumentSchema.extend({ kind: z.enum(["markdown", "openapi"]).default("markdown") })).min(1).max(MAX_UPLOAD_FILES).optional(),
+      ops: z.array(uploadedDocumentSchema).min(1).max(MAX_UPLOAD_FILES).optional(),
     })
-    .refine((v) => !!v.ba !== !!v.api, { message: "Import exactly one document: ba or api" }),
+    .refine((v) => [v.ba, v.api, v.ops].filter(Boolean).length === 1, { message: "Import the documents of one step: ba, api or ops" }),
   "runs:list": z.object({ projectId: id }),
   "runs:delete": z.object({ runId: id }),
   "runs:get": z.object({ runId: id }),
   "runs:pause": z.object({ runId: id }),
   "runs:resume": z.object({ runId: id }),
   "runs:cancel": z.object({ runId: id }),
-  "runs:retryNode": z.object({ runId: id, nodeId: id }),
+  // `input` replaces what the step was given (e.g. {} drops an accepted gap before running it again).
+  "runs:retryNode": z.object({ runId: id, nodeId: id, input: z.record(z.string(), z.unknown()).optional() }),
   "runs:provideInput": z.object({ runId: id, nodeId: id, data: z.record(z.string(), z.unknown()) }),
   "runs:events": z.object({ runId: id, nodeRunId: id.optional(), limit: z.number().int().min(1).max(5000).default(500) }),
-  "runs:traceability": z.object({ runId: id }),
-  "runs:gapReport": z.object({ runId: id }),
+  "runs:reports": z.object({ runId: id }),
+  // Shows one of the run's files in the OS file manager: a workflow file (path in the run folder) or an artifact.
+  "runs:revealFile": z
+    .object({ runId: id, path: z.string().min(1).max(500).optional(), artifactId: id.optional() })
+    .refine((v) => !!v.path !== !!v.artifactId, { message: "Give exactly one of path or artifactId" }),
   "runs:artifacts": z.object({ runId: id, nodeRunId: id.optional() }),
   "runs:readArtifact": z.object({ artifactId: id }),
   "sessions:list": z.object({ projectId: id }),
@@ -103,6 +110,8 @@ export const requestSchemas = {
   /** Usage dashboard: local Claude transcripts of the last `days` days + quota history. */
   "accounts:usage": z.object({ days: z.number().int().min(1).max(30).default(30) }),
   "terminal:open": z.object({ sessionId: id, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
+  /** A fresh Claude Code session in the project folder of a feature (run), as the run's Claude account. */
+  "terminal:openFeature": z.object({ runId: id, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
   "terminal:snapshot": z.object({ terminalId: id }),
   "terminal:write": z.object({ terminalId: id, data: z.string().max(65_536) }),
   "terminal:resize": z.object({ terminalId: id, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
@@ -199,7 +208,6 @@ export interface RunSummary {
   finishedAt?: string;
 }
 
-/** Traceability Matrix data (spec §20.1 #6), read from the run's package artifacts. */
 /** An AI step's editable prompt. */
 export interface PromptDto {
   name: string;
@@ -211,17 +219,13 @@ export interface PromptDto {
   placeholders: string[];
 }
 
-export interface TraceabilityDto {
-  readiness: FeReadinessPackage | null;
-  tests: AcceptanceTestCasePackage | null;
-  /** Written by C2.evidence_report once the acceptance tests ran. */
-  trace: {
-    verificationLevel: string;
-    ui: Array<UiApiTraceabilityItem & { name: string }>;
-    tests: Array<TestTraceabilityItem & { title: string }>;
-    sourceFiles: string[];
-    evidenceIds: string[];
-  } | null;
+/** One of the run's Markdown reports (review, scenarios, test design, acceptance tests, evidence), latest version. */
+export interface RunReportDto {
+  name: string;
+  title: string;
+  text: string;
+  /** The file in the run folder (absolute). */
+  path: string;
 }
 
 export interface RunStateDto {
@@ -478,8 +482,8 @@ export interface IpcResponses {
   "runs:retryNode": void;
   "runs:provideInput": void;
   "runs:events": EventDto[];
-  "runs:traceability": TraceabilityDto;
-  "runs:gapReport": string | null;
+  "runs:reports": RunReportDto[];
+  "runs:revealFile": void;
   "runs:artifacts": ArtifactRecord[];
   "runs:readArtifact": { record: ArtifactRecord; text?: string; dataUrl?: string };
   "sessions:list": SessionDto[];
@@ -496,6 +500,7 @@ export interface IpcResponses {
   "accounts:command": { ok: boolean; output: string };
   "accounts:usage": UsageReportDto;
   "terminal:open": { terminalId: string; command: string };
+  "terminal:openFeature": { terminalId: string; command: string };
   "terminal:snapshot": { data: string; open: boolean };
   "terminal:write": void;
   "terminal:resize": void;

@@ -99,7 +99,7 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
         </div>
         <div className="ff-actions">
           <button type="button" className="ff-btn" onClick={() => navigate({ name: "matrix", projectId, runId })}>
-            Traceability matrix
+            Reports
           </button>
           {state.run.status === "paused" ? (
             <button type="button" className="ff-btn ff-btn-primary" onClick={() => void control("runs:resume")}>

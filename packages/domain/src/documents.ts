@@ -1,5 +1,5 @@
-/** Spec §11.3 */
-export type SourceSnapshotType = "ba_markdown" | "api_markdown" | "openapi" | "figma";
+/** Spec §11.3; `ops_markdown`: a feature's test operations guide (e.g. how to prepare data in the CMS). */
+export type SourceSnapshotType = "ba_markdown" | "api_markdown" | "ops_markdown" | "openapi" | "figma";
 
 export interface SourceSnapshot {
   id: string;

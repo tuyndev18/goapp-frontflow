@@ -180,4 +180,29 @@ describe("interactive Claude steps", () => {
     expect(args[args.indexOf("--setting-sources") + 1]).toBe("user,project");
     expect(logs.some((l) => l.message.includes("settings.local.json") && l.message.includes('"*"'))).toBe(true);
   });
+
+  it("keeps the session open while work left in the background has not produced the output yet", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "ff-claude-"));
+    const report = path.join(mkdtempSync(path.join(tmpdir(), "ff-report-")), "acceptance-tests.md");
+    let finished = false;
+    let finishedEarly = false;
+    const { backend } = fakeTerminals(configDir, (write) => {
+      write({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "t1", name: "Monitor", input: { command: "tail -f e2e.log" } }], stop_reason: "tool_use", usage: { input_tokens: 1, output_tokens: 1 } } });
+      write({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "Monitor started" }] } });
+      write({ type: "assistant", message: { id: "m2", content: [{ type: "text", text: "Waiting for the test run." }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } } });
+      // Past the settle time: without the background wait the step would already be done.
+      setTimeout(() => {
+        finishedEarly = finished;
+        write({ type: "user", isMeta: true, message: { role: "user", content: "<task-notification>tests finished</task-notification>" } });
+        writeFileSync(report, "## Kết luận\nĐạt\n");
+        write({ type: "assistant", message: { id: "m3", content: [{ type: "text", text: "Report written." }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } } });
+      }, 9000);
+    });
+    const { ctx, services, cwd, logs } = setup(backend);
+    const result = await runAgentStep(ctx, services, { projectId: "p1", adapterId: "claude-code", cwd, prompt: "Run the tests", readOnly: false, outputReady: () => existsSync(report) });
+    finished = true;
+    expect(finishedEarly).toBe(false);
+    expect(result.resultText).toBe("Report written.");
+    expect(logs.some((l) => l.message.includes("waiting for work it left in the background"))).toBe(true);
+  }, 30_000);
 });

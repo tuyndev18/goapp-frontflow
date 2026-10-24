@@ -2,38 +2,67 @@ import { useEffect, useState } from "react";
 import type { FigmaStatusDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+import { ConfirmDialog } from "./ConfirmDialog.js";
 
 const MAX_BYTES = 2 * 1024 * 1024;
+/** Same limit as runs:importDocuments (MAX_UPLOAD_FILES). */
+const MAX_FILES = 20;
 
 interface PickedFile {
   name: string;
   content: string;
 }
 
-/**
- * Input for A.api_contract (kind "api", decides FE readiness) and C1.ba_spec (kind "ba", only drives
- * the acceptance tests): the document is imported into the waiting step.
- */
-export function DocumentImportPanel({ runId, nodeId, kind }: { runId: string; nodeId: string; kind: "api" | "ba" }) {
-  const notify = useApp((s) => s.notify);
-  const [doc, setDoc] = useState<PickedFile>();
-  const [format, setFormat] = useState<"markdown" | "openapi">("markdown");
-  const [busy, setBusy] = useState(false);
-  const isApi = kind === "api";
+/** The documents a document step takes. */
+export type DocumentKind = "api" | "ba" | "ops";
 
-  async function pick(file: File | undefined) {
-    if (!file) return;
-    if (file.size > MAX_BYTES) return notify("error", `${file.name} is larger than 2 MB`);
-    setDoc({ name: file.name, content: await file.text() });
-    if (isApi) setFormat(/\.(ya?ml|json)$/i.test(file.name) ? "openapi" : "markdown");
+/** The document kind of a document step type; undefined for other steps. */
+export function documentKindOf(type: string): DocumentKind | undefined {
+  return type === "readiness.read_api" ? "api" : type === "tests.read_ba" ? "ba" : type === "tests.read_ops_guide" ? "ops" : undefined;
+}
+
+/** One upload into a document step (its files); runs imported before uploads held several files recorded one file per entry. */
+export type DocumentUpload = { importedAt: string; documents: Array<{ snapshotId: string; sourceUri?: string }> } | { importedAt: string; snapshotId: string; sourceUri?: string };
+
+/**
+ * Input for A.api_contract (kind "api", reviewed against the built UI), C1.ba_spec (kind "ba",
+ * only drives the acceptance tests) and C2.ops_guide (kind "ops", how to prepare test data, e.g. in
+ * the CMS). One upload holds one or more files and replaces the previous
+ * upload: the step only reads the latest one. With `update`, a finished step runs again with the
+ * new upload, and so do the steps after it (earlier uploads stay in the history).
+ */
+export function DocumentImportPanel({ runId, nodeId, kind, update }: { runId: string; nodeId: string; kind: DocumentKind; update?: boolean }) {
+  const notify = useApp((s) => s.notify);
+  const [docs, setDocs] = useState<PickedFile[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const isApi = kind === "api";
+  const what = isApi ? "API contract" : kind === "ba" ? "BA specification" : "test operations guide";
+
+  async function pick(list: FileList | null) {
+    const files = [...(list ?? [])];
+    if (!files.length) return;
+    if (files.length > MAX_FILES) return notify("error", `Upload at most ${MAX_FILES} files at once`);
+    const tooBig = files.find((f) => f.size > MAX_BYTES);
+    if (tooBig) return notify("error", `${tooBig.name} is larger than 2 MB`);
+    setDocs(await Promise.all(files.map(async (f) => ({ name: f.name, content: await f.text() }))));
   }
 
   async function submit() {
-    if (!doc) return;
+    if (!docs.length) return;
     setBusy(true);
     try {
-      await api.invoke("runs:importDocuments", isApi ? { runId, nodeId, api: { ...doc, kind: format } } : { runId, nodeId, ba: doc });
-      notify("info", `${isApi ? "API contract" : "BA specification"} imported`);
+      await api.invoke(
+        "runs:importDocuments",
+        // OpenAPI files are recognized by their extension; everything else is a Markdown contract.
+        isApi
+          ? { runId, nodeId, api: docs.map((d) => ({ ...d, kind: /\.(ya?ml|json)$/i.test(d.name) ? ("openapi" as const) : ("markdown" as const) })) }
+          : kind === "ba"
+            ? { runId, nodeId, ba: docs }
+            : { runId, nodeId, ops: docs },
+      );
+      notify("info", `${what}: ${docs.length} file${docs.length === 1 ? "" : "s"} imported${update ? "; running again with them" : ""}`);
+      setDocs([]);
     } catch (err) {
       notify("error", errorMessage(err));
     } finally {
@@ -43,43 +72,89 @@ export function DocumentImportPanel({ runId, nodeId, kind }: { runId: string; no
 
   return (
     <div className="ff-input-panel">
-      <h3>{isApi ? "Import API contract" : "Import BA specification"}</h3>
+      {/* The operations guide step passes without a guide, so its first upload is an update too. */}
+      <h3>{update && kind !== "ops" ? `Upload a newer ${what}` : `Import ${what}`}</h3>
       <div className="ff-dropzones">
         {isApi ? (
-          <FilePick label="API contract" hint="Markdown or OpenAPI (.md, .yaml, .json)" accept=".md,.markdown,.yaml,.yml,.json" file={doc} onPick={(f) => void pick(f)} />
+          <FilePick label="API contract" hint="One or more files: Markdown or OpenAPI (.md, .yaml, .json)" accept=".md,.markdown,.yaml,.yml,.json" files={docs} onPick={(l) => void pick(l)} />
+        ) : kind === "ba" ? (
+          <FilePick label="BA specification" hint="One or more Markdown files (.md) — used to generate acceptance tests" accept=".md,.markdown,text/markdown" files={docs} onPick={(l) => void pick(l)} />
         ) : (
-          <FilePick label="BA specification" hint="Markdown (.md) — used to generate acceptance tests" accept=".md,.markdown,text/markdown" file={doc} onPick={(f) => void pick(f)} />
+          <FilePick
+            label="Test operations guide"
+            hint="One or more Markdown files (.md) — how to prepare test data and preconditions, e.g. in the CMS"
+            accept=".md,.markdown,text/markdown"
+            files={docs}
+            onPick={(l) => void pick(l)}
+          />
         )}
       </div>
+      {docs.length > 1 ? (
+        <ul className="ff-small ff-picked-files">
+          {docs.map((d) => (
+            <li key={d.name}>
+              {d.name} <span className="ff-muted">· {d.content.split("\n").length} lines</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="ff-muted ff-small">The step reads only the files of its latest upload.</p>
       <div className="ff-actions">
-        {isApi ? (
-          <label className="ff-field ff-inline ff-small">
-            <span>API format</span>
-            <select className="ff-input" value={format} onChange={(e) => setFormat(e.target.value as "markdown" | "openapi")}>
-              <option value="markdown">Markdown contract</option>
-              <option value="openapi">OpenAPI JSON/YAML</option>
-            </select>
-          </label>
-        ) : null}
-        <button type="button" className="ff-btn ff-btn-primary" disabled={!doc || busy} onClick={() => void submit()}>
-          {busy ? "Importing…" : "Import & continue"}
+        <button type="button" className="ff-btn ff-btn-primary" disabled={!docs.length || busy} onClick={() => (update ? setConfirming(true) : void submit())}>
+          {busy ? "Importing…" : update ? "Import & run again" : "Import & continue"}
         </button>
       </div>
+      {update ? (
+        <ConfirmDialog
+          open={confirming}
+          title={`Use these ${docs.length} file${docs.length === 1 ? "" : "s"} from now on?`}
+          confirmLabel="Import & run again"
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            void submit();
+          }}
+        >
+          <p>They replace the files in use: this step and every step after it run again with them only. Earlier uploads stay in the history; code changes already made stay in the project.</p>
+        </ConfirmDialog>
+      ) : null}
     </div>
   );
 }
 
-function FilePick({ label, hint, accept, file, onPick }: { label: string; hint: string; accept: string; file?: PickedFile; onPick(f: File | undefined): void }) {
+/** The uploads into a document step, newest first; only the newest one is in use. */
+export function DocumentHistory({ uploads }: { uploads: DocumentUpload[] }) {
+  if (!uploads.length) return null;
   return (
-    <label className={`ff-dropzone${file ? " ff-dropzone-filled" : ""}`}>
+    <div className="ff-doc-history">
+      <h3>Uploads</h3>
+      <ol reversed className="ff-small">
+        {[...uploads].reverse().map((u, i) => {
+          const files = "documents" in u ? u.documents : [u];
+          return (
+            <li key={`${u.importedAt}-${i}`}>
+              {files.map((f) => f.sourceUri ?? f.snapshotId).join(", ")} <span className="ff-muted">· {new Date(u.importedAt).toLocaleString()}</span>
+              {i === 0 ? <span className="ff-tag">in use</span> : null}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function FilePick({ label, hint, accept, files, onPick }: { label: string; hint: string; accept: string; files: PickedFile[]; onPick(list: FileList | null): void }) {
+  const [only] = files;
+  return (
+    <label className={`ff-dropzone${files.length ? " ff-dropzone-filled" : ""}`}>
       <span className="ff-dropzone-icon" aria-hidden="true">
-        {file ? "📄" : "⬆"}
+        {files.length ? "📄" : "⬆"}
       </span>
       <span className="ff-dropzone-text">
         <strong>{label}</strong>
-        <span className="ff-muted ff-small">{file ? `${file.name} · ${file.content.split("\n").length} lines` : hint}</span>
+        <span className="ff-muted ff-small">{files.length > 1 ? `${files.length} files` : only ? `${only.name} · ${only.content.split("\n").length} lines` : hint}</span>
       </span>
-      <input type="file" accept={accept} aria-label={label} onChange={(e) => onPick(e.target.files?.[0])} />
+      <input type="file" multiple accept={accept} aria-label={label} onChange={(e) => onPick(e.target.files)} />
     </label>
   );
 }

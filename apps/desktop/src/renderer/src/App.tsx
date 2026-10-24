@@ -10,6 +10,7 @@ import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { SkillsScreen } from "./screens/SkillsScreen.js";
 import { UsageScreen } from "./screens/UsageScreen.js";
 import { AccountsBubble } from "./components/AccountsBubble.js";
+import { ClaudeCodeLauncher } from "./components/ClaudeCodeLauncher.js";
 import { ApprovalsBar } from "./components/ApprovalsBar.js";
 import { BrandMark } from "./components/BrandMark.js";
 import { NavIcon, type NavIconName } from "./components/NavIcon.js";
@@ -132,6 +133,7 @@ export function App() {
         {screen.name === "settings" && <SettingsScreen />}
       </main>
       {screen.name !== "accounts" && <AccountsBubble />}
+      {screen.name === "run" && <ClaudeCodeLauncher key={screen.runId} runId={screen.runId} />}
       {toast ? (
         <div className={`ff-toast ff-toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"}>
           <span>{toast.message}</span>

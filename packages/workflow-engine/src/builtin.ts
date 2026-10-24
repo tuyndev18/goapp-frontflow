@@ -16,7 +16,8 @@ export function loadBuiltinWorkflows(dir: string): WorkflowDefinition {
   return composeWorkflows(FEATURE_DELIVERY_WORKFLOW_ID, "Feature delivery (UI → API review → integration ∥ BA tests)", parts, {
     // v5: no project-analysis step; the API review compares the contract with the built UI; every AI step is an editable prompt.
     // v6: no implementation gates (B2.quality_gates removed; AI steps run no build/typecheck/lint).
-    version: 6,
+    // v7: test design reads the BA only; optional C2.ops_guide (test operations guide, e.g. how to prepare data in the CMS) feeds the auto-tests.
+    version: 7,
     description: "UI from Figma, review against the API contract when it arrives, API integration, and BA-driven acceptance tests composed into one run graph.",
   });
 }

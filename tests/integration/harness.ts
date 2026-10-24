@@ -18,6 +18,7 @@ import {
   type FeatureRunInputs,
   type ImportedApiContract,
   type ImportedBaSpec,
+  type ImportedOpsGuide,
   type NodeServices,
 } from "@frontflow/workflow-nodes";
 
@@ -45,11 +46,15 @@ export interface Harness {
   approvals: ApprovalBroker;
   definition: WorkflowDefinition;
   projectId: string;
+  /** The tool's data folder (run files live under projects/<project>/runs/<run>/files). */
+  dataDir: string;
   newEngine(): WorkflowEngine;
   /** `importLater`: the documents are supplied to A.api_contract / C1.ba_spec instead of being pinned at creation. */
   createRunInputs(options?: { baFixture?: string; allowAssumptions?: boolean; importLater?: boolean }): FeatureRunInputs;
   importApi(fixture?: string): ImportedApiContract;
   importBa(fixture?: string): ImportedBaSpec;
+  /** One upload into C2.ops_guide (the fixture's ops-guide.md). */
+  importOps(fixture?: string): ImportedOpsGuide;
   dispose(): Promise<void>;
 }
 
@@ -102,22 +107,29 @@ export async function createHarness(options: { aiFixture?: string } = {}): Promi
     approvals,
     mcpConfigDir: join(dir, "mcp"),
     scratchDir: join(dir, "scratch"),
+    runFilesDir: (projectId, runId) => join(dir, "projects", projectId, "runs", runId, "files"),
     settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 60_000, agentTimeoutMs: 60_000, fixBudget: 1 }),
   });
   const definition = loadBuiltinWorkflows(join(REPO_ROOT, "workflows"));
   const handlers = createBuiltinHandlers(services);
   const engines: WorkflowEngine[] = [];
-  const snap = (fixture: string, type: "ba_markdown" | "api_markdown", file: string) => {
+  const snap = (fixture: string, type: "ba_markdown" | "api_markdown" | "ops_markdown", file: string) => {
     const content = readFileSync(join(FIXTURES, "alignment", fixture, file), "utf8");
     const { snapshot, text } = snapshotDocument({ type, content, sourceUri: file });
     artifacts.saveSnapshotContent(projectId, snapshot, text);
     return snapshot;
   };
+  const apiDoc = (fixture: string) => ({ snapshotId: snap(fixture, "api_markdown", "api.md").id, sourceUri: "api.md", kind: "markdown" as const });
+  const baDoc = (fixture: string) => ({ snapshotId: snap(fixture, "ba_markdown", "ba.md").id, sourceUri: "ba.md" });
+  /** One upload into A.api_contract (an upload may hold several documents). */
   function importApi(fixture = "cancel-order"): ImportedApiContract {
-    return { api: { snapshotId: snap(fixture, "api_markdown", "api.md").id, sourceUri: "api.md", kind: "markdown" } };
+    return { api: [apiDoc(fixture)] };
   }
   function importBa(fixture = "cancel-order"): ImportedBaSpec {
-    return { ba: { snapshotId: snap(fixture, "ba_markdown", "ba.md").id, sourceUri: "ba.md" } };
+    return { ba: [baDoc(fixture)] };
+  }
+  function importOps(fixture = "cancel-order"): ImportedOpsGuide {
+    return { ops: [{ snapshotId: snap(fixture, "ops_markdown", "ops-guide.md").id, sourceUri: "ops-guide.md" }] };
   }
 
 
@@ -131,6 +143,7 @@ export async function createHarness(options: { aiFixture?: string } = {}): Promi
     approvals,
     definition,
     projectId,
+    dataDir: dir,
     newEngine() {
       const engine = new WorkflowEngine({
         store: db.runStore,
@@ -143,8 +156,10 @@ export async function createHarness(options: { aiFixture?: string } = {}): Promi
     },
     importApi,
     importBa,
+    importOps,
     createRunInputs(options = {}) {
-      const docs = options.importLater ? undefined : { ...importApi(options.baFixture), ...importBa(options.baFixture) };
+      const fixture = options.baFixture ?? "cancel-order";
+      const docs = options.importLater ? undefined : { api: apiDoc(fixture), ba: baDoc(fixture) };
       return {
         snapshotIds: docs ? [docs.api.snapshotId, docs.ba.snapshotId] : [],
         gitBaseSha: git(projectRoot, "rev-parse", "HEAD").trim(),

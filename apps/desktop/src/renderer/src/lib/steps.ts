@@ -17,15 +17,16 @@ export interface StepLook {
 const LOOKS: Record<string, StepLook> = {
   "figma.design": { icon: "🎨", does: "Frames pushed from Figma", handoff: "Figma scope", input: true },
   "readiness.read_api": { icon: "📄", does: "Upload → saved in the project", handoff: "API contract", input: true },
-  "readiness.review": { icon: "🔀", does: "Contract vs the built UI", handoff: "Readiness package", decision: { pass: "ready", otherwise: "gaps → you decide" } },
+  "readiness.review": { icon: "🔀", does: "Contract vs the built UI", handoff: "Review report", decision: { pass: "≥ 92%", otherwise: "gaps → you decide" } },
   "ai.implement_ui": { icon: "🖌️", does: "UI from the Figma design", handoff: "UI code" },
   "ai.api_integration": { icon: "🔌", does: "API client and bindings", handoff: "API binding" },
   "integration.check_backend": { icon: "🛰️", does: "Real backend or contract-only", handoff: "Backend level" },
   "ai.bind_ui_states": { icon: "🧩", does: "Loading, empty, error states", handoff: "UI states" },
   "tests.read_ba": { icon: "📋", does: "Upload BA → AI extracts scenarios", handoff: "BA scenarios", input: true },
+  "tests.read_ops_guide": { icon: "🗂️", does: "Optional: how to prepare test data (CMS)", handoff: "Operations guide" },
   "tests.design": { icon: "🧪", does: "Scenarios → test cases", handoff: "Test cases", decision: { pass: "testable", otherwise: "gaps → you decide" } },
   "ai.acceptance_tests": { icon: "✍️", does: "Write the test code", handoff: "Test code" },
-  "test.acceptance": { icon: "🔬", does: "Run, classify failures", handoff: "Test results", decision: { pass: "pass", otherwise: "fail → AI fixes", loop: true } },
+  "test.acceptance": { icon: "🔬", does: "AI runs, fixes, reports", handoff: "Test report", decision: { pass: "Đạt", otherwise: "fail → you decide" } },
   "report.evidence": { icon: "📊", does: "Traceability & report" },
 };
 

@@ -111,9 +111,3 @@ export async function runGates(ctx: NodeExecutionContext, services: NodeServices
 export function failedGates(results: GateResult[]): GateResult[] {
   return results.filter((r) => r.status === "failed");
 }
-
-export function describeFailures(results: GateResult[]): string {
-  return failedGates(results)
-    .map((r) => `## ${r.gate} (${r.command}) exit ${r.exitCode}\n${r.outputTail ?? ""}`)
-    .join("\n\n");
-}

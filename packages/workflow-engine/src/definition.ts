@@ -256,7 +256,8 @@ export function validateWorkflowDefinition(definition: WorkflowDefinition, optio
     const where = `node "${node.id}"`;
     if (!node.type) issues.push(`${where}: type must not be empty`);
     if (!Number.isInteger(node.version) || node.version < 1) issues.push(`${where}: version must be a positive integer`);
-    if (!(node.timeoutMs > 0)) issues.push(`${where}: timeoutMs must be > 0`);
+    // 0 = no timeout (AI steps: a waiting agent costs nothing and the user can cancel it).
+    if (!(node.timeoutMs >= 0)) issues.push(`${where}: timeoutMs must be >= 0`);
     if (node.mutation && node.readOnly) issues.push(`${where}: cannot be both mutation and readOnly`);
     const policy = node.retryPolicy;
     if (!Number.isInteger(policy.maxAttempts) || policy.maxAttempts < 1 || policy.maxAttempts > MAX_ATTEMPTS_LIMIT) {

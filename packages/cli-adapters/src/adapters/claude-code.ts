@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createAgentEvent, type AgentEvent, type AgentEventOf, type EventContext } from "@frontflow/event-schema";
-import type { CliCapabilities } from "../types.js";
+import type { CliCapabilities, InteractiveLaunch, InteractiveLaunchInput } from "../types.js";
 import { ProcessCliAdapter, type LaunchSpec, type ProcessAdapterOptions, type SessionRecord } from "./base.js";
 
 export interface ClaudeParseContext extends EventContext {
@@ -339,6 +339,19 @@ export const CLAUDE_CAPABILITIES: CliCapabilities = {
 /** Claude Code via `claude -p --output-format stream-json --input-format stream-json`. */
 export class ClaudeCodeAdapter extends ProcessCliAdapter<ClaudeParseState> {
   readonly id: string = "claude-code";
+
+  /**
+   * A project settings file the TUI would stop on with a "Settings Warning" dialog is left out,
+   * like the workflow steps do; the user fixes the file to have it apply again.
+   */
+  override interactiveLaunch(input: InteractiveLaunchInput): InteractiveLaunch | undefined {
+    const launch = super.interactiveLaunch(input);
+    const problems = launch && input.cwd ? claudeProjectSettingsProblems(input.cwd) : [];
+    if (!launch || !problems.length) return launch;
+    const skipped = new Set(problems.map((p) => p.source));
+    const sources = ["user", ...(["project", "local"] as const).filter((s) => !skipped.has(s))].join(",");
+    return { ...launch, args: [...launch.args, "--setting-sources", sources] };
+  }
 
   protected override interactiveArgs(externalSessionId?: string, newSessionId?: string): string[] | undefined {
     if (externalSessionId) return ["--resume", externalSessionId];

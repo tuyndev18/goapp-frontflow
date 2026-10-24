@@ -59,7 +59,8 @@ const DEFAULT_MAX_CONCURRENCY = 4;
 const DEFAULT_BASE_DELAY_MS = 1000;
 const MAX_BACKOFF_MS = 10 * 60 * 1000;
 const FAILED_LIKE: ReadonlySet<NodeRunStatus> = new Set(["failed", "blocked", "cancelled"]);
-const RESETTABLE_ON_RETRY: ReadonlySet<NodeRunStatus> = new Set(["failed", "blocked", "skipped", "cancelled"]);
+const RERUNNABLE: ReadonlySet<NodeRunStatus> = new Set(["failed", "blocked", "passed", "waiting_for_input"]);
+const IN_FLIGHT: ReadonlySet<NodeRunStatus> = new Set(["running", "retrying"]);
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -272,21 +273,38 @@ export class WorkflowEngine {
     return this.snapshot(rt);
   }
 
-  /** Manually retries a failed/blocked node with a fresh retry budget and re-opens its non-passed dependents. */
-  async retryNode(runId: string, nodeId: string): Promise<RunState> {
-    const rt = this.requireRuntime(runId);
+  /**
+   * Manually runs a node again with a fresh retry budget: a failed/blocked one, or a finished one
+   * (passed, waiting for input) so it picks up an edited prompt. Its dependents were built from the
+   * old output, so every one of them that already started is reset too, and what the user gave them
+   * (an accepted gap, an answer) is dropped. `providedInput`, when given, replaces what the node
+   * itself was given (a newer document, or `{}` to drop an earlier answer). A finished run is loaded
+   * back from the store first.
+   */
+  async retryNode(runId: string, nodeId: string, providedInput?: Record<string, unknown>): Promise<RunState> {
+    const rt = this.runtimes.get(runId) ?? (await this.loadFinishedRun(runId));
     await this.enqueue(rt, async () => {
       const node = this.requireNode(rt, nodeId);
-      if (node.status !== "failed" && node.status !== "blocked") {
-        throw new WorkflowEngineError("INVALID_STATE", `Node ${nodeId} is ${node.status}; only failed or blocked nodes can be retried`);
+      if (!RERUNNABLE.has(node.status)) {
+        throw new WorkflowEngineError("INVALID_STATE", `Node ${nodeId} is ${node.status}; only failed, blocked, passed or waiting nodes can be run again`);
       }
       if (rt.run.status === "cancelled" || rt.run.status === "timed_out") {
         throw new WorkflowEngineError("INVALID_STATE", `Run ${runId} is ${rt.run.status} and cannot be retried`);
       }
-      await this.resetNode(rt, nodeId);
       const descendants = descendantsOf(rt.definition, nodeId);
+      const busy = rt.order.find((id) => descendants.has(id) && IN_FLIGHT.has(this.node(rt, id).status));
+      if (busy) throw new WorkflowEngineError("INVALID_STATE", `Node ${busy} depends on ${nodeId} and is still running; wait for it to finish first`);
+      await this.resetNode(rt, nodeId);
       for (const id of rt.order) {
-        if (descendants.has(id) && RESETTABLE_ON_RETRY.has(this.node(rt, id).status)) await this.resetNode(rt, id);
+        if (descendants.has(id) && this.node(rt, id).status !== "pending") await this.resetNode(rt, id);
+      }
+      const provided = { ...this.providedInputs(rt.run) };
+      const stale = Object.keys(provided).filter((id) => descendants.has(id));
+      for (const id of stale) delete provided[id];
+      if (providedInput !== undefined) provided[nodeId] = structuredClone(providedInput);
+      if (stale.length || providedInput !== undefined) {
+        rt.run.inputs = { ...rt.run.inputs, [PROVIDED_INPUTS_KEY]: provided };
+        await this.store.saveRun(structuredClone(rt.run));
       }
       if (rt.run.status !== "paused" && rt.run.status !== "running") {
         await this.setRunStatus(rt, "running", `manual retry of ${nodeId}`);
@@ -326,32 +344,14 @@ export class WorkflowEngine {
     const result: RecoverResult = { recovered: [], missingDefinitions: [] };
     for (const run of await this.store.listActiveRuns()) {
       if (this.runtimes.has(run.id)) continue;
-      const definition = this.getDefinition(run.workflowId, run.workflowVersion);
-      if (!definition) {
+      const rt = await this.loadRuntime(run);
+      if (!rt) {
         result.missingDefinitions.push({ runId: run.id, workflowId: run.workflowId, workflowVersion: run.workflowVersion });
         continue;
       }
-      const stored = new Map((await this.store.listNodeRuns(run.id)).map((n) => [n.nodeId, n]));
-      const nodes = new Map<string, NodeRun>();
-      for (const spec of definition.nodes) {
-        nodes.set(
-          spec.id,
-          stored.get(spec.id) ?? {
-            id: newId("nr"),
-            workflowRunId: run.id,
-            nodeId: spec.id,
-            nodeType: spec.type,
-            nodeVersion: spec.version,
-            status: "pending",
-            attempt: 0,
-          },
-        );
-      }
-      const rt = this.createRuntime(run, definition, nodes);
       await this.enqueue(rt, async () => {
         for (const id of rt.order) {
           const node = this.node(rt, id);
-          if (!stored.has(id)) await this.store.saveNodeRun(structuredClone(node));
           if (node.status === "running") {
             await this.updateNode(rt, id, { status: "ready", attempt: Math.max(0, node.attempt - 1), startedAt: undefined });
           } else if (node.status === "retrying") {
@@ -409,6 +409,45 @@ export class WorkflowEngine {
   }
 
   // ---------------------------------------------------------------- runtime plumbing
+
+  /** A finished run is not kept in memory (nor recovered after a restart) until a node of it is run again. */
+  private async loadFinishedRun(runId: string): Promise<RunRuntime> {
+    const run = await this.store.getRun(runId);
+    if (!run) throw new WorkflowEngineError("RUN_NOT_FOUND", `Unknown run ${runId}`);
+    if (run.status === "cancelled" || run.status === "timed_out") {
+      throw new WorkflowEngineError("INVALID_STATE", `Run ${runId} is ${run.status} and cannot be retried`);
+    }
+    const rt = await this.loadRuntime(run);
+    if (!rt) throw new WorkflowEngineError("RUN_NOT_FOUND", `Workflow ${run.workflowId} v${run.workflowVersion} of run ${runId} is no longer available`);
+    return rt;
+  }
+
+  /** Rebuilds a persisted run's runtime; undefined when its workflow definition is no longer registered. */
+  private async loadRuntime(run: WorkflowRun): Promise<RunRuntime | undefined> {
+    const definition = this.getDefinition(run.workflowId, run.workflowVersion);
+    if (!definition) return undefined;
+    const stored = new Map((await this.store.listNodeRuns(run.id)).map((n) => [n.nodeId, n]));
+    const nodes = new Map<string, NodeRun>();
+    for (const spec of definition.nodes) {
+      const node = stored.get(spec.id);
+      if (node) {
+        nodes.set(spec.id, node);
+        continue;
+      }
+      const created: NodeRun = {
+        id: newId("nr"),
+        workflowRunId: run.id,
+        nodeId: spec.id,
+        nodeType: spec.type,
+        nodeVersion: spec.version,
+        status: "pending",
+        attempt: 0,
+      };
+      nodes.set(spec.id, created);
+      await this.store.saveNodeRun(structuredClone(created));
+    }
+    return this.createRuntime(run, definition, nodes);
+  }
 
   private createRuntime(run: WorkflowRun, definition: WorkflowDefinition, nodes: Map<string, NodeRun>): RunRuntime {
     const order = topologicalOrder(definition);
@@ -788,10 +827,13 @@ export class WorkflowEngine {
   private async execute(rt: RunRuntime, spec: WorkflowNodeSpec, exec: Execution, input: NodeInput): Promise<void> {
     const nodeRun = structuredClone(this.node(rt, spec.id));
     const { signal } = exec.controller;
-    const timer = setTimeout(() => {
-      exec.abortReason ??= "timeout";
-      exec.controller.abort(new NodeError(ERROR_CODES.NODE_TIMEOUT, `Node ${spec.id} exceeded timeout of ${spec.timeoutMs}ms`));
-    }, spec.timeoutMs);
+    const timer =
+      spec.timeoutMs > 0
+        ? setTimeout(() => {
+            exec.abortReason ??= "timeout";
+            exec.controller.abort(new NodeError(ERROR_CODES.NODE_TIMEOUT, `Node ${spec.id} exceeded timeout of ${spec.timeoutMs}ms`));
+          }, spec.timeoutMs)
+        : undefined;
 
     const nodeCtx = this.eventCtx(rt, nodeRun.id);
     const ctx: NodeExecutionContext = {

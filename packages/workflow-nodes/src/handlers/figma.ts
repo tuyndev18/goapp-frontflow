@@ -1,8 +1,9 @@
 import { hashJson } from "@frontflow/domain";
+import { escapeMarkdownText } from "@frontflow/document-parser";
 import { parseFigmaHandoff, type FigmaHandoff } from "@frontflow/figma-mcp-bridge";
 import { NodeError, type NodeHandler } from "@frontflow/workflow-engine";
 import type { NodeServices } from "../services.js";
-import { json, plural, projectOf, runInputs, saveArtifact } from "../util.js";
+import { plural, projectOf, runInputs, saveArtifact } from "../util.js";
 
 /**
  * What the run knows about the design: the layers the GoApp Figma plugin pushed. FrontFlow does not
@@ -50,9 +51,10 @@ export function figmaHandlers(services: NodeServices): Record<string, NodeHandle
         for (const n of handoff.nodes) ctx.log("info", `Layer "${n.name}" ${n.id}${tagOf(n) ? ` (${tagOf(n)})` : ""}`);
         if (!services.figma?.serverPath()) ctx.log("warn", "GoApp Figma MCP server not found (Settings → GoApp Figma): the AI will not be able to read the design");
 
-        // 2. Snapshot (spec §11.4): the run is pinned to these layers, not to whatever is pushed later
+        // 2. Snapshot (spec §11.4): the run is pinned to these layers, not to whatever is pushed later.
+        // The hash pins the exact selection; the kept file is readable Markdown like every run file.
         const snapshotHash = hashJson(handoff);
-        const snapshotArtifactId = await saveArtifact(ctx, services, "figma_snapshot", "figma-handoff.json", json(handoff), "application/json", `Figma ${handoff.id}`);
+        const snapshotArtifactId = await saveArtifact(ctx, services, "figma_snapshot", "figma-handoff.md", handoffMarkdown(handoff, snapshotHash), "text/markdown", `Figma ${handoff.id}`);
         const output: FigmaDesignOutput = {
           handoffId: handoff.id,
           projectName: handoff.projectName,
@@ -71,6 +73,29 @@ export function figmaHandlers(services: NodeServices): Record<string, NodeHandle
       },
     },
   };
+}
+
+function handoffMarkdown(handoff: FigmaHandoff, hash: string): string {
+  const esc = escapeMarkdownText;
+  // Longer than any backtick run in the prompt, so the prompt cannot close the code block.
+  const fence = "`".repeat(Math.max(3, ...(handoff.prompt.match(/`+/g) ?? []).map((run) => run.length)) + 1);
+  return [
+    `# Figma ${esc(handoff.id)} — ${esc(handoff.projectName)}`,
+    "",
+    `- File: ${esc(handoff.fileName)}${handoff.fileKey ? ` (\`${handoff.fileKey.replace(/`/g, "")}\`)` : ""}`,
+    `- Code target: ${esc(handoff.target)}`,
+    `- Snapshot hash: \`${hash}\``,
+    "",
+    "## Layers",
+    "",
+    ...handoff.nodes.map((n) => `- ${esc(n.name)} \`${n.id.replace(/`/g, "")}\` — ${n.width}px${tagOf(n) ? ` (${esc(tagOf(n) ?? "")})` : ""}${n.url ? ` — ${esc(n.url)}` : ""}`),
+    "",
+    "## Prompt from the plugin",
+    "",
+    `${fence}text`,
+    handoff.prompt,
+    fence,
+  ].join("\n");
 }
 
 function tagOf(node: FigmaHandoff["nodes"][number]): string | undefined {

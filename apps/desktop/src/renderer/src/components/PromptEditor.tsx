@@ -8,8 +8,8 @@ const SYSTEM = "_system";
 
 /**
  * Every AI step is just a prompt the agent runs in the project (an interactive session in AI
- * terminals). The user edits it here; the edit applies the next time the step runs (Retry reruns
- * it). `{{placeholders}}` are filled in by the step with its inputs.
+ * terminals). The user edits it here; the edit applies the next time the step runs (Retry or Run
+ * again reruns it). `{{placeholders}}` are filled in by the step with its inputs.
  */
 export function PromptEditor({ nodeId, label }: { nodeId: string; label: string }) {
   const notify = useApp((s) => s.notify);
@@ -69,7 +69,7 @@ export function PromptEditor({ nodeId, label }: { nodeId: string; label: string 
         {isSystem
           ? "Rules every AI step runs with. "
           : "What the AI agent is asked to do in this step. It runs as an interactive session in your project folder (see AI terminals). "}
-        Changes apply the next time the step runs; use Retry to rerun it now.
+        Changes apply the next time the step runs; use Retry or Run again on the step to rerun it now.
       </p>
       {prompt === undefined ? (
         <Loading label="Loading prompt" />

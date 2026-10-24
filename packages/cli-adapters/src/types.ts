@@ -21,6 +21,8 @@ export interface InteractiveLaunchInput {
   externalSessionId?: string;
   /** Start a fresh conversation under this id, when the CLI lets the caller choose it (so it can be resumed later). */
   newSessionId?: string;
+  /** Folder the CLI starts in; Claude skips its broken project settings files (see claudeProjectSettingsProblems). */
+  cwd?: string;
 }
 
 export interface InteractiveLaunch {

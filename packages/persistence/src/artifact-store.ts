@@ -344,6 +344,7 @@ function snapshotExtension(type: SourceSnapshot["type"]): string {
   switch (type) {
     case "ba_markdown":
     case "api_markdown":
+    case "ops_markdown":
       return "md";
     case "figma":
       return "json";

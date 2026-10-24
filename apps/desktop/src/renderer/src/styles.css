@@ -1587,8 +1587,9 @@ input[type="radio"] {
 }
 .ff-run-body {
   flex: 1;
-  /* Below this the screen scrolls instead of squeezing the step list and inspector (and its terminals) under the canvas. */
-  min-height: 600px;
+  /* Below this the screen scrolls instead of squeezing the step list and inspector (and its terminals) under the canvas.
+     Nearly a full viewport: the step header and tabs take ~250px before the AI terminal gets any. */
+  min-height: max(600px, 85vh);
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 24px;
@@ -2027,17 +2028,6 @@ input[type="radio"] {
   margin: 0 var(--panel-x) 24px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
-}
-.ff-raw-output {
-  margin: 8px var(--panel-x) 24px;
-}
-.ff-raw-output summary {
-  cursor: pointer;
-  font-weight: 500;
-  color: var(--muted);
-}
-.ff-raw-output .ff-pre {
-  margin-top: 8px;
 }
 
 /* ---------- Terminals (always dark) ---------- */
@@ -2886,6 +2876,22 @@ input[type="radio"] {
   border-radius: var(--rounded-lg);
   font-size: 14px;
 }
+/* Long paths and code in AI reports must wrap or scroll inside the box, never widen the pane. */
+.ff-markdown {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.ff-markdown pre {
+  overflow-x: auto;
+}
+/* A Markdown report with its Copy / Open in folder actions (step result, Reports screen). */
+.ff-report {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
 .ff-markdown h1,
 .ff-markdown h2,
 .ff-markdown h3 {
@@ -2960,6 +2966,20 @@ input[type="radio"] {
 }
 .ff-input-panel h3 {
   margin: 0;
+}
+.ff-picked-files {
+  margin: 0;
+  padding-left: 24px;
+}
+.ff-doc-history h3 {
+  margin: 0 0 8px;
+}
+.ff-doc-history ol {
+  margin: 0;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .ff-input-panel .ff-field {
   margin: 0;
@@ -3037,108 +3057,6 @@ input[type="radio"] {
 .ff-next-steps strong {
   color: var(--text);
   font-weight: 600;
-}
-
-/* ---------- Step results ---------- */
-.ff-verdict-wrap {
-  padding: 16px var(--panel-x) 8px;
-}
-.ff-verdict {
-  display: flex;
-  gap: 24px;
-  padding: 24px;
-  border-radius: var(--rounded-lg);
-  background: var(--surface-2);
-}
-.ff-verdict-score {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-width: 104px;
-  padding: 12px;
-  border-radius: var(--rounded-md);
-}
-.ff-verdict-score strong {
-  font-size: 36px;
-  font-weight: 700;
-  letter-spacing: -1px;
-  line-height: 1;
-}
-.ff-verdict-score span {
-  margin-top: 6px;
-  font-size: 12px;
-  opacity: 0.85;
-}
-.ff-verdict-success .ff-verdict-score {
-  background: var(--success-soft);
-  color: var(--success);
-}
-.ff-verdict-warning .ff-verdict-score {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-.ff-verdict-danger .ff-verdict-score {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.ff-verdict-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ff-verdict-body h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.25px;
-}
-.ff-verdict-body p {
-  margin: 0;
-  white-space: pre-wrap;
-}
-.ff-verdict-body .ff-chips {
-  margin-top: 0;
-}
-.ff-verdict-issues summary {
-  margin-top: 4px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.ff-verdict-issues ul {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 260px;
-  margin: 8px 0 0;
-  padding-left: 0;
-  overflow: auto;
-  list-style: none;
-}
-.ff-verdict-issues .ff-tag {
-  margin-left: 0;
-}
-.ff-align-tag-ready,
-.ff-align-tag-fe_only {
-  background: var(--success-soft);
-  color: var(--success);
-}
-.ff-align-tag-partial,
-.ff-align-tag-ambiguous {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-.ff-align-tag-missing_api,
-.ff-align-tag-missing_design,
-.ff-align-tag-conflict {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.ff-align-tag-assumed {
-  background: var(--assumed-soft);
-  color: var(--assumed);
 }
 
 /* ---------- AI chat ---------- */
@@ -3861,6 +3779,78 @@ input[type="radio"] {
 .ff-accb-fab:focus-visible {
   outline: 2px solid var(--accb-tone);
   outline-offset: 3px;
+}
+/* Claude Code launcher: a bubble like the accounts one, just left of it, with a terminal popover */
+.ff-ccl {
+  position: fixed;
+  right: calc(24px + 56px + 12px);
+  bottom: 24px;
+  z-index: 40;
+}
+.ff-ccl-fab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--text) 6%, var(--surface)), var(--surface) 72%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 18px rgba(0, 0, 0, 0.1);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.ff-ccl-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+.ff-ccl-fab:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+.ff-ccl-fab-open {
+  background: var(--text);
+  color: var(--surface);
+}
+.ff-ccl-live {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--sev-ok);
+}
+/* Anchored to the right edge of the screen (above both bubbles), not to this button. */
+.ff-ccl-panel {
+  position: fixed;
+  right: 24px;
+  bottom: calc(24px + 56px + 12px);
+  width: min(960px, calc(100vw - 48px));
+  height: min(600px, calc(100vh - 128px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--term-line);
+  border-radius: var(--rounded-lg);
+  background: var(--term-bg);
+  box-shadow: var(--shadow-2);
+  animation: ff-ccl-in 0.14s ease-out;
+}
+.ff-ccl-panel[hidden] {
+  display: none;
+}
+.ff-ccl-panel .ff-iterm {
+  min-height: 0;
+}
+@keyframes ff-ccl-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 .ff-accb-tone-ok {
   --accb-tone: var(--sev-ok);

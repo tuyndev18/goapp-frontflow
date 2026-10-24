@@ -5,14 +5,15 @@ import type { GraphNodeDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { ActivityFeed } from "../components/ActivityFeed.js";
+import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { FileActions } from "../components/FileActions.js";
 import { Markdown } from "../components/Markdown.js";
 import { AiChat } from "../components/AiChat.js";
 import { LiveTerminal } from "../components/LiveTerminal.js";
 import { PromptEditor } from "../components/PromptEditor.js";
 import { formatDuration, interactiveTerminalId, stepDuration, type ActivityLine } from "../lib/activity.js";
 import { groupColor, groupLabel, groupOf } from "../lib/groups.js";
-import { DocumentImportPanel, FigmaHandoffPanel } from "../components/StepInputs.js";
-import { StepResultView, VerdictCard, readableResult, type VerdictView } from "../components/StepResults.js";
+import { DocumentHistory, DocumentImportPanel, documentKindOf, FigmaHandoffPanel, type DocumentUpload } from "../components/StepInputs.js";
 
 const TABS = ["Activity", "Prompt", "Result", "Files", "Tests", "Evidence", "AI chat"] as const;
 type Tab = (typeof TABS)[number];
@@ -36,20 +37,31 @@ export function StepDetail({
 }) {
   const notify = useApp((s) => s.notify);
   const events = useApp((s) => s.runEvents[runId]);
+  const runPaused = useApp((s) => s.runStates[runId]?.run.status === "paused");
   const [tab, setTab] = useState<Tab>("Activity");
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [open, setOpen] = useState<{ record: ArtifactRecord; text?: string; dataUrl?: string }>();
   const [note, setNote] = useState("");
+  const [confirmRunAgain, setConfirmRunAgain] = useState(false);
 
-  const verdict = (nodeRun?.output as { verdict?: VerdictView } | undefined)?.verdict;
-  // Steps with a readable result (extraction, UI flow, readiness verdict, test design) open on it; others open on the live activity.
-  useEffect(() => setTab(nodeRun?.status === "passed" && (readableResult(nodeRun.output) || verdict) ? "Result" : "Activity"), [node.id]);
+  const outputReport = (nodeRun?.output as { report?: unknown } | undefined)?.report;
+  const report = typeof outputReport === "string" ? outputReport : undefined;
+  // The UI vs API review's coverage (Đáp ứng: NN%), which gates it.
+  const score = (nodeRun?.output as { score?: unknown } | undefined)?.score;
+  // Steps with a Markdown report (review, BA scenarios, test design, evidence) open on it; others open on the live activity.
+  useEffect(() => setTab(nodeRun?.status === "passed" && report ? "Result" : "Activity"), [node.id]);
   useEffect(() => {
     setOpen(undefined);
     if (!nodeRun) return setArtifacts([]);
     void api.invoke("runs:artifacts", { runId, nodeRunId: nodeRun.id }).then(setArtifacts, () => setArtifacts([]));
   }, [runId, nodeRun?.id, nodeRun?.status]);
 
+  // A step keeps one record across Run again, retries and restarts: show what its latest execution produced, the rest folded away.
+  const startedAt = nodeRun?.startedAt;
+  const [currentArtifacts, earlierArtifacts] = useMemo(
+    () => (startedAt ? [artifacts.filter((a) => a.createdAt >= startedAt), artifacts.filter((a) => a.createdAt < startedAt)] : [artifacts, []]),
+    [artifacts, startedAt],
+  );
   const sessionId = useMemo(() => events?.find((e) => e.nodeRunId === nodeRun?.id && e.sessionId)?.sessionId, [events, nodeRun?.id]);
   const terminalId = useMemo(() => (nodeRun ? interactiveTerminalId(events ?? [], nodeRun.id) : undefined), [events, nodeRun?.id]);
   const running = nodeRun?.status === "running" || nodeRun?.status === "retrying";
@@ -60,16 +72,20 @@ export function StepDetail({
   const files = useMemo(() => {
     const out = new Map<string, string>();
     for (const e of events ?? []) {
-      if (e.type === "file.changed" && e.nodeRunId === nodeRun?.id) {
+      // Like Evidence: only what the latest execution changed (earlier runs of the step left old workflow files).
+      if (e.type === "file.changed" && e.nodeRunId === nodeRun?.id && (!startedAt || e.timestamp >= startedAt)) {
         const p = e.payload as { path: string; change: string };
         out.set(p.path, p.change);
       }
     }
     return [...out];
-  }, [events, nodeRun?.id]);
+  }, [events, nodeRun?.id, startedAt]);
   const tests = useMemo(
-    () => (events ?? []).filter((e) => e.type === "test.result" && e.nodeRunId === nodeRun?.id).map((e) => ({ id: e.id, ...(e.payload as { suite: string; passed: number; failed: number; skipped: number }) })),
-    [events, nodeRun?.id],
+    () =>
+      (events ?? [])
+        .filter((e) => e.type === "test.result" && e.nodeRunId === nodeRun?.id && (!startedAt || e.timestamp >= startedAt))
+        .map((e) => ({ id: e.id, ...(e.payload as { suite: string; passed: number; failed: number; skipped: number }) })),
+    [events, nodeRun?.id, startedAt],
   );
 
   async function act(fn: () => Promise<unknown>, done?: string) {
@@ -88,7 +104,10 @@ export function StepDetail({
   const spec = visualStateForNode(nodeRun?.status);
   const duration = stepDuration(nodeRun, now);
   const canRetry = nodeRun && ["failed", "blocked", "cancelled"].includes(nodeRun.status);
-  const isGapGate = node.type === "readiness.review" || node.type === "tests.design";
+  // A finished step can run again, e.g. after its prompt was edited; the engine resets the steps after it.
+  const canRunAgain = nodeRun?.status === "passed" || nodeRun?.status === "waiting_for_input";
+  const isGapGate = node.type === "readiness.review" || node.type === "tests.design" || node.type === "test.acceptance";
+  const documentKind = documentKindOf(node.type);
 
   return (
     <section className="ff-detail" aria-label={`Step ${node.label}`}>
@@ -110,15 +129,40 @@ export function StepDetail({
         </div>
         {node.description ? <p className="ff-muted ff-detail-desc">{node.description}</p> : null}
         {node.ai ? <StepSkills nodeId={node.id} /> : null}
+        {canRunAgain ? (
+          <div className="ff-actions">
+            <button type="button" className="ff-btn" onClick={() => setConfirmRunAgain(true)}>
+              ↻ Run again
+            </button>
+            <span className="ff-muted ff-small">Runs this step again{node.ai ? " with its current prompt" : ""}; the steps after it run again too.</span>
+          </div>
+        ) : null}
       </header>
+      <ConfirmDialog
+        open={confirmRunAgain}
+        title={`Run "${node.label}" again?`}
+        confirmLabel="Run again"
+        onCancel={() => setConfirmRunAgain(false)}
+        onConfirm={() => {
+          setConfirmRunAgain(false);
+          // A gap gate asks again instead of reusing gaps accepted earlier.
+          void act(
+            () => api.invoke("runs:retryNode", { runId, nodeId: node.id, ...(isGapGate ? { input: {} } : {}) }),
+            // A paused run keeps the reset steps waiting until it is resumed.
+            runPaused ? `${node.label} reset; the run is paused — click Resume to run it` : `Running ${node.label} again`,
+          );
+        }}
+      >
+        <p>The current result of this step is replaced, and every step after it is reset and runs again. Code changes those steps already made stay in the project.</p>
+      </ConfirmDialog>
 
       {nodeRun?.status === "waiting_for_input" ? (
         <div className="ff-callout ff-callout-warning">
           <p>
             <strong>⏸ Needs your input.</strong> {nodeRun.blockerSummary}
           </p>
-          {node.type === "readiness.read_api" || node.type === "tests.read_ba" ? (
-            <DocumentImportPanel runId={runId} nodeId={node.id} kind={node.type === "tests.read_ba" ? "ba" : "api"} />
+          {documentKind ? (
+            <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} />
           ) : node.type === "figma.design" ? (
             <FigmaHandoffPanel runId={runId} nodeId={node.id} />
           ) : isGapGate ? (
@@ -126,7 +170,13 @@ export function StepDetail({
               <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: { accept: true } }), "Gaps accepted")}>
                 Accept gaps &amp; continue
               </button>
-              <span className="ff-muted ff-small">or update the design, API contract or BA spec and start a new run. See Evidence for the gap report.</span>
+              <span className="ff-muted ff-small">
+                {node.type === "readiness.review"
+                  ? "or import a newer API contract in Read API contract; this review then runs again. See Result for the review."
+                  : node.type === "test.acceptance"
+                    ? "or fix what fails (BA, design or API) and run this step again. See Result for the test report."
+                    : "or import a newer BA specification in Read BA specification; test design then runs again. See Evidence for the gap report."}
+              </span>
             </div>
           ) : (
             <div className="ff-actions">
@@ -151,13 +201,20 @@ export function StepDetail({
         </div>
       ) : null}
 
+      {documentKind && nodeRun && ["passed", "failed", "blocked"].includes(nodeRun.status) ? (
+        <div className="ff-callout">
+          <DocumentHistory uploads={(nodeRun.output as { history?: DocumentUpload[] } | undefined)?.history ?? []} />
+          <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} update />
+        </div>
+      ) : null}
+
       <div className="ff-tabs ff-tabs-flush" role="tablist">
         {TABS.filter((t) => t !== "Prompt" || node.ai).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className={`ff-tab${tab === t ? " ff-tab-active" : ""}`} onClick={() => setTab(t)}>
             {t}
-            {t === "Result" && verdict ? <span className="ff-count">{verdict.score}%</span> : null}
+            {t === "Result" && typeof score === "number" ? <span className="ff-count">{score}%</span> : null}
             {t === "Files" && files.length ? <span className="ff-count">{files.length}</span> : null}
-            {t === "Evidence" && artifacts.length ? <span className="ff-count">{artifacts.length}</span> : null}
+            {t === "Evidence" && currentArtifacts.length ? <span className="ff-count">{currentArtifacts.length}</span> : null}
           </button>
         ))}
       </div>
@@ -165,7 +222,7 @@ export function StepDetail({
       <div className="ff-detail-body">
         {tab === "Activity" && <ActivityFeed lines={lines} showStep={false} defaultVerbose emptyText={nodeRun ? "No activity yet." : "This step has not started yet."} />}
         {tab === "Prompt" && node.ai ? <PromptEditor nodeId={node.id} label={node.label} /> : null}
-        {tab === "Result" && <ResultView value={nodeRun?.output} verdict={verdict} />}
+        {tab === "Result" && <ResultView runId={runId} value={nodeRun?.output} report={report} />}
         {tab === "Files" && (
           <div className="ff-pad">
             {files.length ? (
@@ -180,7 +237,7 @@ export function StepDetail({
             ) : (
               <p className="ff-muted">No file changes reported for this step.</p>
             )}
-            <ArtifactList items={artifacts.filter((a) => a.kind === "diff")} onOpen={show} />
+            <ArtifactList items={currentArtifacts.filter((a) => a.kind === "diff")} onOpen={show} />
           </div>
         )}
         {tab === "Tests" && (
@@ -213,7 +270,13 @@ export function StepDetail({
         )}
         {tab === "Evidence" && (
           <div className="ff-pad">
-            <ArtifactList items={artifacts} onOpen={show} />
+            <ArtifactList items={currentArtifacts} onOpen={show} />
+            {earlierArtifacts.length ? (
+              <details>
+                <summary className="ff-muted">Earlier runs of this step ({earlierArtifacts.length})</summary>
+                <ArtifactList items={earlierArtifacts} onOpen={show} />
+              </details>
+            ) : null}
           </div>
         )}
         {tab === "AI chat" &&
@@ -236,6 +299,7 @@ export function StepDetail({
             <div className="ff-row">
               <strong>{open.record.relativePath.split("/").pop()?.replace(/^art_[a-z0-9]+-/, "")}</strong>
               <span className="ff-muted ff-mono ff-small">sha256 {open.record.contentHash.slice(0, 12)}</span>
+              {open.text !== undefined ? <FileActions runId={runId} text={open.text} artifactId={open.record.id} /> : null}
               <button type="button" className="ff-btn ff-btn-small" onClick={() => setOpen(undefined)}>
                 Close
               </button>
@@ -290,22 +354,17 @@ function ArtifactList({ items, onOpen }: { items: ArtifactRecord[]; onOpen(id: s
   );
 }
 
-function ResultView({ value, verdict }: { value: unknown; verdict: VerdictView | undefined }) {
+function ResultView({ runId, value, report }: { runId: string; value: unknown; report: string | undefined }) {
   if (value === undefined) return <p className="ff-pad ff-muted">No result yet.</p>;
-  const readable = readableResult(value);
-  if (readable) return <StepResultView result={readable} />;
-  const text = JSON.stringify(value, null, 2) ?? "";
-  const raw = <pre className="ff-pre ff-pad-pre">{text.length > 20000 ? `${text.slice(0, 20000)}\n…truncated` : text}</pre>;
-  if (!verdict) return raw;
-  return (
-    <>
-      <div className="ff-verdict-wrap">
-        <VerdictCard verdict={verdict} />
+  if (report) {
+    const reportPath = (value as { reportPath?: unknown }).reportPath;
+    return (
+      <div className="ff-report ff-pad">
+        <FileActions runId={runId} text={report} {...(typeof reportPath === "string" ? { path: reportPath } : {})} />
+        <Markdown source={report} />
       </div>
-      <details className="ff-raw-output">
-        <summary>Raw output</summary>
-        {raw}
-      </details>
-    </>
-  );
+    );
+  }
+  const text = JSON.stringify(value, null, 2) ?? "";
+  return <pre className="ff-pre ff-pad-pre">{text.length > 20000 ? `${text.slice(0, 20000)}\n…truncated` : text}</pre>;
 }

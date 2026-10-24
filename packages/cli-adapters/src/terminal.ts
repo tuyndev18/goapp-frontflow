@@ -54,6 +54,7 @@ export class TerminalManager {
     const defaults: InteractiveLaunch | undefined = adapter?.interactiveLaunch?.({
       ...(input.externalSessionId ? { externalSessionId: input.externalSessionId } : {}),
       ...(input.newSessionId ? { newSessionId: input.newSessionId } : {}),
+      cwd: input.cwd,
     });
     const launch: InteractiveLaunch | undefined =
       defaults && (input.args || input.env) ? { ...defaults, args: input.args ?? defaults.args, env: { ...defaults.env, ...input.env } } : defaults;

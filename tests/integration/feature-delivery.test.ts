@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness } from "./harness.js";
@@ -46,78 +46,55 @@ describe("feature delivery workflow", () => {
     expect(state.run.status).toBe("completed_with_assumptions");
     const byId = new Map(state.nodes.map((n) => [n.nodeId, n]));
     expect(byId.get("B2.check_backend")?.output).toMatchObject({ verificationLevel: "contract_only" });
-    expect(state.nodes).toHaveLength(12);
+    expect(state.nodes).toHaveLength(13);
 
-    // The API contract was saved into the project, and the agent reviewed the built UI against it.
-    const apiOut = byId.get("A.api_contract")?.output as { apiContractPath: string };
-    expect(apiOut.apiContractPath).toBe(`.frontflow/runs/${run.id}/api-contract.md`);
-    expect(readFileSync(join(h.projectRoot, apiOut.apiContractPath), "utf8")).toContain("POST /orders/{orderId}/cancel");
-    const readiness = byId.get("A.review")?.output as {
-      readiness: string;
-      reviewedBy: string;
-      verdict: { score: number; headline: string; summary: string };
-      mappings: Array<{ status: string; rationale: string }>;
-      operations: Array<{ sourceRefs: Array<{ excerpt?: string }> }>;
-      uiFlow: Array<{ figmaNodeIds: string[] }>;
-    };
-    expect(readiness).toMatchObject({ readiness: "ready", reviewedBy: "ai" });
-    expect(readiness.verdict).toMatchObject({ score: 100, headline: "3 of 3 UI needs ready to implement (100%)" });
-    expect(readiness.verdict.summary).toContain("can be wired to the API");
-    expect(readiness.mappings[0]?.rationale).toContain("api.md");
-    expect(readiness.operations[0]?.sourceRefs[0]?.excerpt).toContain("POST /orders/{orderId}/cancel");
-    expect(readiness.uiFlow[0]?.figmaNodeIds).toEqual(["123:456"]);
-    const logs = h.db.runStore.listEvents(run.id, { types: ["node.log"] }).map((e) => (e.payload as { message: string }).message);
-    expect(logs.some((m) => m.includes("reviewed by AI"))).toBe(true);
+    // The workflow files live in the tool's data for this project and run, never in the project.
+    const runDir = join(h.dataDir, "projects", h.projectId, "runs", run.id, "files");
+    const apiOut = byId.get("A.api_contract")?.output as { apiContractFiles: string[]; history: Array<{ documents: unknown[] }> };
+    expect(apiOut.apiContractFiles).toEqual([join(runDir, "api-contract", "api.md")]);
+    expect(apiOut.history).toHaveLength(1);
+    expect(readFileSync(join(runDir, "api-contract", "api.md"), "utf8")).toContain("POST /orders/{orderId}/cancel");
+    // The review is the agent's short Markdown report, read by the next steps' agents.
+    const review = byId.get("A.review")?.output as { reportPath: string; report: string };
+    expect(review).toMatchObject({ reportPath: join(runDir, "api-review.md"), verdict: "enough", score: 100 });
+    expect(readFileSync(review.reportPath, "utf8")).toBe(review.report);
+    expect(byId.get("A.review")?.assumed).toBeFalsy();
     // Every AI step ran its editable prompt; the rendered prompts are kept as evidence.
     const promptArtifacts = h.db.artifacts.listByRun(run.id).filter((a) => a.kind === "prompt").map((a) => a.name);
-    expect(promptArtifacts).toEqual(expect.arrayContaining(["B1.implement_ui-attempt1.md", "A.review-attempt1.md", "B2.api_binding-attempt1.md", "C1.test_design-attempt1.md"]));
-    const reviewPrompt = h.db.artifacts.listByRun(run.id).find((a) => a.name === "A.review-attempt1.md");
-    expect(h.artifacts.readText(reviewPrompt!.id)).toContain(apiOut.apiContractPath);
-    expect(h.artifacts.readText(reviewPrompt!.id)).not.toContain("{{");
+    expect(promptArtifacts).toEqual(expect.arrayContaining(["B1.implement_ui-attempt1.md", "A.review-attempt1.md", "B2.api_binding-attempt1.md", "C1.ba_spec-attempt1.md", "C1.test_design-attempt1.md"]));
+    const prompt = (name: string) => h!.artifacts.readText(h!.db.artifacts.listByRun(run.id).find((a) => a.name === name)!.id);
+    expect(prompt("A.review-attempt1.md")).toContain(join(runDir, "api-contract", "api.md"));
+    expect(prompt("A.review-attempt1.md")).not.toContain("{{");
+    expect(prompt("B2.api_binding-attempt1.md")).toContain(review.reportPath);
 
-    // Workflow C1 designed the tests from the BA, the UI flow and the mapping.
-    const design = byId.get("C1.test_design")?.output as { status: string; designedBy: string; testCases: Array<{ id: string; figmaNodeIds: string[] }> };
-    expect(design).toMatchObject({ status: "ready", designedBy: "ai" });
-    expect(design.testCases.map((t) => t.id)).toEqual(["TC-BA-ORDER-001-01", "TC-BA-ORDER-001-02", "TC-BA-ORDER-002-01"]);
-    expect(design.testCases[0]?.figmaNodeIds).toEqual(["123:456"]);
+    // Workflow C1 read the BA scenarios and designed the tests, both as Markdown reports.
+    const scenarios = byId.get("C1.ba_spec")?.output as { reportPath: string; report: string };
+    expect(scenarios.reportPath).toBe(join(runDir, "ba-scenarios.md"));
+    expect(scenarios.report).toContain("BA-ORDER-001");
+    const design = byId.get("C1.test_design")?.output as { reportPath: string; report: string; verdict: string };
+    expect(design).toMatchObject({ reportPath: join(runDir, "test-design.md"), verdict: "enough" });
+    expect(design.report).toContain("TC-BA-ORDER-002-01");
+    expect(prompt("C2.generate_tests-attempt1.md")).toContain(design.reportPath);
 
     const artifacts = h.db.artifacts.listByRun(run.id);
-    const traceArtifact = artifacts.find((a) => a.relativePath.endsWith("traceability.json"));
-    expect(traceArtifact).toBeDefined();
-    const trace = JSON.parse(h.artifacts.readText(traceArtifact!.id)) as {
-      ui: Array<{ figmaNodeIds: string[]; sourceFiles: string[]; evidenceIds: string[]; testIds: string[]; status: string }>;
-      tests: Array<{ requirementId: string; testCaseIds: string[]; status: string }>;
-    };
-    expect(trace.ui.length).toBeGreaterThan(0);
-    for (const item of trace.ui) {
-      expect(item.figmaNodeIds).toContain("123:456");
-      expect(item.sourceFiles).toContain("fake-output.txt");
-      expect(item.evidenceIds.length).toBeGreaterThan(0);
-      expect(item.testIds.length).toBe(3);
-      // contract-only → never claimed as verified
-      expect(item.status).toBe("assumed");
-    }
-    expect(trace.tests.map((t) => [t.requirementId, t.testCaseIds.length, t.status])).toEqual([
-      ["BA-ORDER-001", 2, "assumed"],
-      ["BA-ORDER-002", 1, "assumed"],
-    ]);
-
-    const report = artifacts.find((a) => a.relativePath.endsWith("evidence-report.md"));
-    expect(report).toBeDefined();
-    expect(h.artifacts.readText(report!.id)).toContain("contract_only");
-    expect(artifacts.some((a) => a.relativePath.endsWith("fe-readiness-package.json"))).toBe(true);
-    expect(artifacts.some((a) => a.relativePath.endsWith("acceptance-test-cases.json"))).toBe(true);
+    const evidence = byId.get("C2.evidence_report")?.output as { reportPath: string; report: string };
+    // contract-only → never claimed as verified
+    expect(evidence.report).toContain("contract_only");
+    expect(readFileSync(evidence.reportPath, "utf8")).toBe(evidence.report);
+    // The agent ran the acceptance tests and reported them; FrontFlow only read its Đạt conclusion.
+    expect(byId.get("C2.run_tests")?.output).toMatchObject({ reportPath: join(runDir, "acceptance-tests.md"), verdict: "enough", verificationLevel: "contract_only" });
+    expect(readFileSync(join(runDir, "acceptance-tests.md"), "utf8")).toContain("TC-BA-ORDER-001-01: pass");
+    // Every file FrontFlow keeps for the run is Markdown (or text: diffs, command output).
+    expect(artifacts.filter((a) => a.mimeType === "application/json").map((a) => a.name)).toEqual([]);
+    expect(h.artifacts.readText(artifacts.find((a) => a.kind === "figma_snapshot")!.id)).toContain("## Layers");
     expect(artifacts.some((a) => a.kind === "diff")).toBe(true);
     expect(artifacts.some((a) => a.kind === "figma_snapshot")).toBe(true);
-    const results = h.db.testResults.listByRun(run.id);
-    expect(results.some((r) => r.suite === "e2e-test" && r.scenarioIds.includes("TC-BA-ORDER-001-01"))).toBe(true);
+    expect(existsSync(join(h.projectRoot, ".frontflow"))).toBe(false);
 
     // The AI agents work in the project folder itself; FrontFlow only records hidden snapshots (no worktree, no branch).
     const checkpoint = h.db.gitCheckpoints.latestForRun(run.id);
     expect(checkpoint?.projectPath).toBe(h.projectRoot);
     expect(readFileSync(join(h.projectRoot, "fake-output.txt"), "utf8")).toContain("generated");
-    // FrontFlow's own run files stay out of the user's git status.
-    expect(execFileSync("git", ["status", "--porcelain", "--", ".frontflow"], { cwd: h.projectRoot, encoding: "utf8" }).trim()).toBe("");
     expect(execFileSync("git", ["branch", "--show-current"], { cwd: h.projectRoot, encoding: "utf8" }).trim()).toBe("main");
     expect(execFileSync("git", ["worktree", "list"], { cwd: h.projectRoot, encoding: "utf8" }).trim().split("\n")).toHaveLength(1);
     expect(execFileSync("git", ["rev-parse", `refs/frontflow/${run.id}`], { cwd: h.projectRoot, encoding: "utf8" }).trim()).toBe(checkpoint?.headSha);
@@ -127,28 +104,96 @@ describe("feature delivery workflow", () => {
     expect(h.db.aiSessions.listByRun(run.id).every((s) => s.status === "completed")).toBe(true);
   }, 240_000);
 
-  it("waits for input when the built UI is not covered by the API contract and continues when gaps are accepted", async () => {
-    // No canned AI answers: the review falls back to the selected layers, so no UI need can be mapped.
+  it("waits when the review does not conclude Đủ and continues with that review when gaps are accepted", async () => {
+    // No canned AI answers: the agent never writes the review file, only a final reply with no conclusion.
     h = await createHarness();
     const engine = h.newEngine();
     const run = await engine.startRun({ projectId: h.projectId, definition: h.definition, inputs: h.createRunInputs({ baFixture: "order-conflicts" }) });
     let state = await engine.waitForRun(run.id);
-    expect(state.run.status).toBe("waiting");
-    expect(state.nodes.filter((n) => n.status === "waiting_for_input").map((n) => n.nodeId)).toEqual(["A.review"]);
-    // The UI was built from Figma anyway; API integration never starts from a package that is not ready.
-    expect(state.nodes.find((n) => n.nodeId === "B1.implement_ui")?.status).toBe("passed");
+    let reviewNode = state.nodes.find((n) => n.nodeId === "A.review");
+    expect(reviewNode).toMatchObject({ status: "waiting_for_input", attempt: 2 });
+    expect((reviewNode?.output as { report: string; verdict: string }).verdict).toBe("unknown");
     expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.status).toBe("waiting_for_dependency");
-    expect(h.db.artifacts.listByRun(run.id).some((a) => a.relativePath.endsWith("readiness-gap-report.md"))).toBe(true);
-    const logs = h.db.runStore.listEvents(run.id, { types: ["node.log"] }).map((e) => (e.payload as { message: string }).message);
-    expect(logs.some((m) => m.includes("FE readiness: not_ready"))).toBe(true);
+    const reviewPrompts = () => h!.db.artifacts.listByRun(run.id).filter((a) => a.name.startsWith("A.review-attempt")).length;
+    const asked = reviewPrompts();
 
-    // Accept the gaps and let the run settle; the rest is covered by the first test.
     await engine.provideInput(run.id, "A.review", { accept: true });
     state = await engine.waitForRun(run.id);
-    const pkgNode = state.nodes.find((n) => n.nodeId === "A.review");
-    expect(pkgNode?.status).toBe("passed");
-    expect(pkgNode?.assumed).toBe(true);
+    reviewNode = state.nodes.find((n) => n.nodeId === "A.review");
+    expect(reviewNode).toMatchObject({ status: "passed", assumed: true });
+    expect((reviewNode?.output as { report: string }).report).toContain("Completed prompt");
+    // Accepting reuses the review already written: the AI is not asked again.
+    expect(reviewPrompts()).toBe(asked);
     expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.status).toBe("passed");
+  }, 240_000);
+
+  it("runs the review again on demand and resets the steps built from it", async () => {
+    h = await createHarness({ aiFixture: "cancel-order" });
+    const engine = h.newEngine();
+    const run = await engine.startRun({ projectId: h.projectId, definition: h.definition, inputs: h.createRunInputs() });
+    const first = await engine.waitForRun(run.id);
+    expect(first.run.status).toBe("completed_with_assumptions");
+    const before = first.nodes.find((n) => n.nodeId === "B2.api_binding")?.finishedAt;
+
+    await engine.retryNode(run.id, "A.review");
+    const state = await engine.waitForRun(run.id);
+    expect(state.run.status).toBe("completed_with_assumptions");
+    const prompts = h.db.artifacts.listByRun(run.id).filter((a) => a.name === "A.review-attempt1.md");
+    expect(prompts).toHaveLength(2);
+    expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.finishedAt).not.toBe(before);
+    // Steps that do not depend on the review are left alone.
+    expect(state.nodes.find((n) => n.nodeId === "B1.implement_ui")?.finishedAt).toBe(first.nodes.find((n) => n.nodeId === "B1.implement_ui")?.finishedAt);
+  }, 240_000);
+
+  it("reads only the files of the latest upload into a document step", async () => {
+    h = await createHarness({ aiFixture: "cancel-order" });
+    const engine = h.newEngine();
+    const run = await engine.startRun({ projectId: h.projectId, definition: h.definition, inputs: h.createRunInputs({ importLater: true }) });
+    await engine.waitForRun(run.id);
+    // First upload: two files; second upload: one file. Only the second one is read.
+    const first = h.importApi();
+    const [doc] = first.api as Array<{ snapshotId: string; kind: "markdown" }>;
+    await engine.provideInput(run.id, "A.api_contract", { api: [doc, { ...doc, sourceUri: "errors.md" }] });
+    await engine.waitForRun(run.id);
+    const runDir = join(h.dataDir, "projects", h.projectId, "runs", run.id, "files", "api-contract");
+    expect(readdirSync(runDir).sort()).toEqual(["api.md", "errors.md"]);
+
+    const history = [{ importedAt: "2026-10-23T00:00:00.000Z", documents: [doc, { ...doc, sourceUri: "errors.md" }] }, { importedAt: "2026-10-23T01:00:00.000Z", documents: [{ ...doc, sourceUri: "api-v2.md" }] }];
+    await engine.retryNode(run.id, "A.api_contract", { api: [{ ...doc, sourceUri: "api-v2.md" }], history });
+    const state = await engine.waitForRun(run.id);
+    expect(readdirSync(runDir)).toEqual(["api-v2.md"]);
+    const out = state.nodes.find((n) => n.nodeId === "A.api_contract")?.output as { apiContractFiles: string[]; history: unknown[] };
+    expect(out.apiContractFiles).toEqual([join(runDir, "api-v2.md")]);
+    expect(out.history).toHaveLength(2);
+    const reviewPrompts = h.db.artifacts.listByRun(run.id).filter((a) => a.name === "A.review-attempt1.md");
+    const latest = reviewPrompts.at(-1);
+    expect(latest && h.artifacts.readText(latest.id)).toContain("api-v2.md");
+    expect(latest && h.artifacts.readText(latest.id)).not.toContain("errors.md");
+  }, 240_000);
+
+  it("runs without a test operations guide and generates the auto-tests again when one is imported", async () => {
+    h = await createHarness({ aiFixture: "cancel-order" });
+    const engine = h.newEngine();
+    const run = await engine.startRun({ projectId: h.projectId, definition: h.definition, inputs: h.createRunInputs() });
+    const first = await engine.waitForRun(run.id);
+    expect(first.run.status).toBe("completed_with_assumptions");
+    // Most features have no operations guide: the step passes and never waits.
+    expect(first.nodes.find((n) => n.nodeId === "C2.ops_guide")).toMatchObject({ status: "passed", output: { opsGuideFiles: [] } });
+    const generatePrompts = () => h!.db.artifacts.listByRun(run.id).filter((a) => a.name === "C2.generate_tests-attempt1.md");
+    expect(h.artifacts.readText(generatePrompts()[0]!.id)).toContain("Không có");
+
+    await engine.retryNode(run.id, "C2.ops_guide", h.importOps() as unknown as Record<string, unknown>);
+    const state = await engine.waitForRun(run.id);
+    expect(state.run.status).toBe("completed_with_assumptions");
+    const guide = join(h.dataDir, "projects", h.projectId, "runs", run.id, "files", "ops-guide", "ops-guide.md");
+    expect(state.nodes.find((n) => n.nodeId === "C2.ops_guide")?.output).toMatchObject({ opsGuideFiles: [guide] });
+    expect(readFileSync(guide, "utf8")).toContain("Tạo đơn hàng");
+    // The auto-tests ran again with the guide; test design reads the BA only and was not run again.
+    expect(generatePrompts()).toHaveLength(2);
+    expect(h.artifacts.readText(generatePrompts().at(-1)!.id)).toContain(guide);
+    const at = (s: typeof first, id: string) => s.nodes.find((n) => n.nodeId === id)?.finishedAt;
+    expect(at(state, "C1.test_design")).toBe(at(first, "C1.test_design"));
+    expect(h.db.artifacts.listByRun(run.id).filter((a) => a.name === "C1.test_design-attempt1.md")).toHaveLength(1);
   }, 240_000);
 
   it("restores and finishes a run after an app restart", async () => {

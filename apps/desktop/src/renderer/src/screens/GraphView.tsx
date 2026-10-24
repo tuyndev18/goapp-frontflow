@@ -554,6 +554,13 @@ function layout(graph: RunStateDto["graph"]): { positions: Map<string, { x: numb
     return d;
   };
   graph.nodes.forEach((n) => visit(n.id));
+  // A step with no input in its lane sits right before the first step it feeds, not in column 0:
+  // otherwise its edge would cross the steps in between and look attached to them.
+  for (const n of graph.nodes) {
+    if (incoming.get(n.id)?.length) continue;
+    const next = graph.edges.filter((e) => e.source === n.id && laneOfNode.get(e.target) === laneOfNode.get(n.id)).map((e) => depth.get(e.target) ?? 0);
+    if (next.length) depth.set(n.id, Math.max(0, Math.min(...next) - 1));
+  }
 
   // Known lanes first, in spec order; a group outside them gets its own lane at the end.
   const laneIds = [...LANES.map((l) => l.id as string)];

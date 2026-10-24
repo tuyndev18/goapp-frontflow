@@ -65,6 +65,11 @@ nodes:
     expect(issues).toContain('node "b": unknown dependency "ghost"');
   });
 
+  it("takes timeoutMs 0 as no time limit, never a negative one", () => {
+    expect(loadWorkflowYaml("id: w\nname: W\nnodes:\n  - { id: a, type: t, timeoutMs: 0 }\n").nodes[0]?.timeoutMs).toBe(0);
+    expect(issuesOf(() => loadWorkflowYaml("id: w\nname: W\nnodes:\n  - { id: a, type: t, timeoutMs: -1 }\n"))).toContain('node "a": timeoutMs must be >= 0');
+  });
+
   it("reports cycles with the path", () => {
     const issues = issuesOf(() =>
       loadWorkflowYaml(`
@@ -182,8 +187,8 @@ describe("built-in workflows", () => {
   it("loads and composes the three workflow files", () => {
     const def = loadBuiltinWorkflows(WORKFLOWS_DIR);
     expect(def.id).toBe("feature-delivery");
-    expect(def.version).toBe(6);
-    expect(def.nodes).toHaveLength(5 + 2 + 5);
+    expect(def.version).toBe(7);
+    expect(def.nodes).toHaveLength(5 + 2 + 6);
     const groups = new Set(def.nodes.map((n) => n.group));
     expect(groups).toEqual(new Set(["B1", "A", "B2", "C1", "C2"]));
     for (const node of def.nodes) expect(node.id.startsWith(`${node.group}.`)).toBe(true);
@@ -204,14 +209,17 @@ describe("built-in workflows", () => {
     expect(byId.get("A.api_contract")?.config?.["ai"]).toBeUndefined();
     // B2 integrates the API only from a reviewed contract.
     expect(byId.get("B2.api_binding")?.dependencies).toEqual(["A.review", "B1.implement_ui"]);
-    // C1 designs tests from BA + UI flow + mapping only, never from the implementation.
-    expect(byId.get("C1.test_design")?.dependencies).toEqual(["C1.ba_spec", "A.review"]);
+    // C1 designs tests from the BA only: no API contract, review or implementation.
+    expect(byId.get("C1.test_design")?.dependencies).toEqual(["C1.ba_spec"]);
+    // The operations guide is optional and only feeds the auto-tests: no dependency, no AI.
+    expect(byId.get("C2.ops_guide")).toMatchObject({ type: "tests.read_ops_guide", dependencies: [] });
+    expect(byId.get("C2.ops_guide")?.config?.["ai"]).toBeUndefined();
     expect(byId.get("C1.ba_spec")?.config?.["waitingRunStatus"]).toBe("test_design_pending");
-    expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "B2.ui_states"]);
+    expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "C2.ops_guide", "B2.ui_states"]);
 
     const graph = toGraph(def);
     expect(graph.nodes).toHaveLength(def.nodes.length);
     expect(graph.edges.find((e) => e.id === "A.review->B2.api_binding")?.conditional).toBe(false);
-    expect(graph.edges.some((e) => e.source.startsWith("B2.") && e.target.startsWith("C1."))).toBe(false);
+    expect(graph.edges.some((e) => (e.source.startsWith("A.") || e.source.startsWith("B")) && e.target.startsWith("C1."))).toBe(false);
   });
 });

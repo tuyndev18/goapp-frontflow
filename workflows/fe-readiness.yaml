@@ -1,13 +1,13 @@
 # Workflow A — review the built UI against the API contract (spec §12).
 # The API contract often arrives after the design: the UI is built from Figma first (B1), and
 # A.api_contract waits for the contract without blocking that work. Reading the contract only
-# saves it into the project (.frontflow/runs/<run>/api-contract.md). A.review is one editable
-# prompt (workflows/prompts/A.review.md) that the agent runs in the project: it compares the
-# contract with the UI code it finds there (Figma is not read again) and writes the review the
-# host turns into the FE Readiness Package and the gap reports (A2–A8). The "wait for update" loop
-# is a single gate: A.review returns waiting_for_input when the package is not_ready. Updated
-# sources start a new run (inputs are immutable snapshots, spec §3.6); provideInput({ accept: true })
-# continues with the gaps recorded as assumptions.
+# saves the files of the latest upload into the run folder in the tool's data (api-contract/); an
+# upload may hold several files and a newer one can be imported at any time: only the latest is read. A.review is one editable
+# prompt (workflows/prompts/A.review.md) that the agent runs in the project: it checks whether the
+# contract is enough for the UI code it finds there (Figma is not read again) and writes a short
+# Markdown review (api-review.md) for the next steps' agents. The "wait for update" loop is a single
+# gate: A.review returns waiting_for_input unless the review's `Đáp ứng: NN%` reaches 92%; importing a newer
+# contract runs it again, provideInput({ accept: true }) continues with the gaps recorded as assumptions.
 id: fe-readiness
 version: 5
 name: Review UI against API contract
@@ -25,7 +25,7 @@ nodes:
   - id: A.api_contract
     type: readiness.read_api
     label: Read API contract
-    description: Import the API contract (Markdown or OpenAPI) whenever it is ready; it is saved into the project for the agent to read.
+    description: Import the API contract (Markdown or OpenAPI, one or more files) whenever it is ready, and again whenever it changes; only the files of the latest upload are saved in the run folder for the agent to read.
     # Waits for the user to import the contract; not cacheable because it arrives through provideInput.
     readOnly: false
     timeoutMs: 120000
@@ -38,11 +38,11 @@ nodes:
   - id: A.review
     type: readiness.review
     label: AI reviews UI vs API
-    description: The agent compares the API contract with the UI built from Figma (editable prompt) and classifies every UI need; gap reports per owner and the FE Readiness Package follow (A2–A8).
+    description: The agent checks whether the API contract is enough to implement the UI built from Figma (editable prompt) and writes a short review of what is missing; below 92% coverage it waits for a newer contract or your decision.
     dependencies: [A.api_contract, B1.implement_ui]
     # Not cacheable: the user may accept gaps through provideInput.
     readOnly: false
-    timeoutMs: 2400000
+    timeoutMs: 0 # AI step: no time limit
     config:
       ai: true
       aiAttempts: 2

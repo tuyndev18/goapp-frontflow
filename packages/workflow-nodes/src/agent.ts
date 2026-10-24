@@ -23,9 +23,11 @@ export interface AgentStepInput {
   projectId: string;
   adapterId: string;
   cwd: string;
+  /** Folders outside `cwd` the agent may read and write too (the run's workflow files). */
+  addDirs?: string[];
   prompt: string;
   systemPrompt?: string;
-  /** Read-only steps run in plan/read-only mode; mutation steps may edit files inside `cwd` only. */
+  /** Read-only steps run in plan/read-only mode; mutation steps may edit files inside `cwd` (and `addDirs`) only. */
   readOnly: boolean;
   /** Give the CLI the goapp-figma MCP server for this step. */
   withFigma?: boolean;
@@ -35,6 +37,8 @@ export interface AgentStepInput {
   filesOnly?: boolean;
   /** `cwd` is the user's own project folder: an interactive session loads its .claude settings like a normal `claude` there. */
   projectSettings?: boolean;
+  /** The step's output is there (e.g. its report file): an interactive session that left work in the background is not done before. */
+  outputReady?: () => boolean;
   /** Claude Code runs as this saved account (FeatureRunInputs.claudeAccountId). */
   claudeAccountId?: string;
   /** The run's model and reasoning effort (FeatureRunInputs.model / effort). */
@@ -63,6 +67,7 @@ const PERMISSION_MODES: Record<string, { readOnly?: string; write?: string }> = 
 
 interface SessionOptions {
   cwd: string;
+  addDirs?: string[];
   prompt: string;
   systemPrompt?: string;
   permissionMode?: string;
@@ -76,6 +81,7 @@ interface SessionOptions {
   configDir?: string;
   model?: string;
   effort?: string;
+  outputReady?: () => boolean;
 }
 
 interface SessionOutcome {
@@ -166,6 +172,7 @@ export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServ
   );
   const options: SessionOptions = {
     cwd: input.cwd,
+    ...(input.addDirs?.length ? { addDirs: input.addDirs } : {}),
     prompt,
     timeoutMs: settings.agentTimeoutMs,
     env,
@@ -174,6 +181,7 @@ export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServ
     // `--effort` is Claude Code's; other CLIs keep their own setting.
     ...(input.effort && (input.adapterId === "claude-code" || input.adapterId === "fake") ? { effort: input.effort } : {}),
     ...(input.projectSettings ? { projectSettings: true } : {}),
+    ...(input.outputReady ? { outputReady: input.outputReady } : {}),
     ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(mcpConfigPath ? { mcpConfigPath } : {}),
@@ -201,7 +209,10 @@ export async function runAgentStep(ctx: NodeExecutionContext, services: NodeServ
     ];
     const scratch = written.filter((f) => !isPathInside(f, input.cwd) && isClaudeScratchpad(f));
     if (scratch.length) ctx.log("info", `AI wrote temporary files in its Claude Code scratchpad (outside the project): ${scratch.join(", ")}`);
-    const filesChanged = written.filter((f) => !scratch.includes(f));
+    // The run's workflow files are FrontFlow's, not the project's code.
+    const runFiles = written.filter((f) => !isPathInside(f, input.cwd) && (input.addDirs ?? []).some((d) => isPathInside(f, d)));
+    if (runFiles.length) ctx.log("info", `AI wrote the run's workflow files: ${runFiles.join(", ")}`);
+    const filesChanged = written.filter((f) => !scratch.includes(f) && !runFiles.includes(f));
     const outside = filesChanged.filter((f) => !isPathInside(f, input.cwd));
     if (outside.length) {
       throw new NodeError("PERMISSION_DENIED", `AI CLI wrote outside its working folder: ${outside.join(", ")}`);
@@ -309,11 +320,17 @@ const POLL_MS = 400;
 /** After Claude ends its turn, the user has this long to keep chatting before the step completes. */
 const SETTLE_MS = 8000;
 const STALL_MS = 15_000;
+/** No transcript activity this long: tell the user to look at the terminal (the session itself never times out). */
+const IDLE_WARN_MS = 10 * 60_000;
 
 /**
  * Claude Code's own interactive UI in a runner PTY: the AI terminals view shows it live and the
  * user can type into it (permission prompts, follow-ups). Progress is read from the session's
- * transcript; the step completes once Claude ends its turn and nobody keeps chatting.
+ * transcript; the step completes once Claude ends its turn and nobody keeps chatting. When Claude
+ * left work in the background (Monitor, a `run_in_background` command, e.g. a long test run) and the
+ * step's output is not there yet, the session stays open: Claude takes a new turn when that work
+ * reports back, and the step goes on until the output is written. There is no time limit: a waiting
+ * Claude costs nothing, so a quiet session is only reported and the user decides (answer or cancel).
  */
 async function runInteractiveSession(ctx: NodeExecutionContext, terminals: TerminalBackend, workDir: string, options: SessionOptions): Promise<SessionOutcome> {
   const externalSessionId = randomUUID();
@@ -349,8 +366,7 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
       ...(options.allowedTools ? { allowedTools: options.allowedTools } : {}),
       ...(options.disallowedTools ? { disallowedTools: options.disallowedTools } : {}),
     }),
-    "--add-dir",
-    workDir,
+    ...[workDir, ...(options.addDirs ?? [])].flatMap((dir) => ["--add-dir", dir]),
   ];
 
   let done = false;
@@ -363,6 +379,21 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
     settleEnd(event);
   };
   const state = createClaudeTranscriptState();
+  let background = false;
+  let waitLogged = false;
+  const watchBackground = (event: AgentEvent) => {
+    if (event.type !== "tool.started") return;
+    const input = event.payload.input as { run_in_background?: unknown } | undefined;
+    if (event.payload.name === "Monitor" || input?.run_in_background === true) background = true;
+  };
+  const waitsForBackground = () => {
+    if (!background || !options.outputReady || options.outputReady()) return false;
+    if (!waitLogged) {
+      waitLogged = true;
+      ctx.log("info", "Claude is waiting for work it left in the background (e.g. a test run); the step goes on until it writes its output");
+    }
+    return true;
+  };
   const complete = () => {
     if (done) return;
     const usage = transcriptUsage(state);
@@ -381,6 +412,8 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
   };
   const startedAt = Date.now();
   let stallWarned = false;
+  let lastActivity = Date.now();
+  let idleWarned = false;
   const poll = () => {
     if (done) return;
     transcript ??= findClaudeTranscript(options.configDir ?? terminals.claudeConfigDir, options.cwd, externalSessionId);
@@ -407,21 +440,28 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
         closeSync(fd);
       }
       offset = size;
+      lastActivity = Date.now();
+      idleWarned = false;
       partial = Buffer.concat([partial, chunk]);
       for (let nl = partial.indexOf(0x0a); nl >= 0; nl = partial.indexOf(0x0a)) {
         const line = partial.subarray(0, nl).toString("utf8");
         partial = partial.subarray(nl + 1);
         if (!line.trim()) continue;
         const parsed = parseClaudeTranscriptLine(line, parseCtx, state);
+        parsed.events.forEach(watchBackground);
         parsed.events.forEach(emit);
         if (parsed.humanPrompt) stopSettle();
       }
     }
     if (state.rateLimit) return fail("RATE_LIMITED", state.rateLimit);
+    if (!idleWarned && Date.now() - lastActivity > IDLE_WARN_MS) {
+      idleWarned = true;
+      ctx.log("warn", `No activity from Claude for ${Math.round(IDLE_WARN_MS / 60_000)} minutes: check this step's AI terminal, or cancel the step`);
+    }
     if (!state.turnEnded || state.tools.size > 0) stopSettle();
     else settleTimer ??= setTimeout(() => {
       settleTimer = undefined;
-      if (state.turnEnded) complete();
+      if (state.turnEnded && !waitsForBackground()) complete();
     }, SETTLE_MS);
   };
 
@@ -432,7 +472,6 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
     else fail("PROCESS_EXITED", `Claude exited (code ${exitCode ?? "null"}) before finishing the task`);
   });
   const timer = setInterval(poll, POLL_MS);
-  const timeout = setTimeout(() => fail("TIMEOUT", `Session exceeded ${options.timeoutMs}ms`), options.timeoutMs);
   const onAbort = () => fail("CANCELLED", "Session cancelled by user");
   ctx.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -449,7 +488,6 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
     return { sessionId, externalSessionId, events, end: await ended };
   } finally {
     clearInterval(timer);
-    clearTimeout(timeout);
     stopSettle();
     offExit();
     ctx.signal.removeEventListener("abort", onAbort);

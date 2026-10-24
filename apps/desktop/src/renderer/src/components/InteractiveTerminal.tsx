@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { api, errorMessage } from "../api.js";
+import { allowClipboardKeys, writeTerminal } from "../lib/terminalInput.js";
 
 /** A chat message as typed into Claude Code's UI: pasted as one block (newlines kept), then Enter. */
 export function typedMessage(text: string): string {
@@ -10,9 +11,23 @@ export function typedMessage(text: string): string {
 
 /**
  * The AI CLI's own interactive UI in a PTY (like a tmux pane): the user types
- * and chats directly. It resumes the step's conversation when the CLI supports it.
+ * and chats directly. With a session it resumes the step's conversation when the CLI supports it;
+ * with a run it starts a fresh Claude Code in the feature's project folder.
  */
-export function InteractiveTerminal({ sessionId, initialInput, onClose }: { sessionId: string; initialInput?: string; onClose(): void }) {
+export function InteractiveTerminal({
+  sessionId,
+  runId,
+  initialInput,
+  onMinimize,
+  onClose,
+}: {
+  sessionId?: string;
+  runId?: string;
+  initialInput?: string;
+  /** Shows a Hide button that only hides the terminal; the CLI keeps running. */
+  onMinimize?(): void;
+  onClose(): void;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const pending = useRef(initialInput);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "danger" | "muted" }>({ text: "Starting…", tone: "muted" });
@@ -30,6 +45,7 @@ export function InteractiveTerminal({ sessionId, initialInput, onClose }: { sess
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(hostRef.current);
+    allowClipboardKeys(term);
     fit.fit();
     term.focus();
 
@@ -55,7 +71,7 @@ export function InteractiveTerminal({ sessionId, initialInput, onClose }: { sess
       terminalId = undefined;
     });
     const input = term.onData((data) => {
-      if (terminalId) void api.invoke("terminal:write", { terminalId, data });
+      if (terminalId) void writeTerminal(terminalId, data).catch(() => undefined);
     });
     const resize = term.onResize(({ cols, rows }) => {
       if (terminalId) void api.invoke("terminal:resize", { terminalId, cols, rows });
@@ -69,7 +85,12 @@ export function InteractiveTerminal({ sessionId, initialInput, onClose }: { sess
     });
     observer.observe(hostRef.current);
 
-    void api.invoke("terminal:open", { sessionId, cols: term.cols, rows: term.rows }).then(
+    const opening = runId
+      ? api.invoke("terminal:openFeature", { runId, cols: term.cols, rows: term.rows })
+      : sessionId
+        ? api.invoke("terminal:open", { sessionId, cols: term.cols, rows: term.rows })
+        : Promise.reject(new Error("No AI session to open"));
+    void opening.then(
       (opened) => {
         if (disposed) {
           void api.invoke("terminal:close", { terminalId: opened.terminalId });
@@ -95,13 +116,18 @@ export function InteractiveTerminal({ sessionId, initialInput, onClose }: { sess
       observer.disconnect();
       term.dispose();
     };
-  }, [sessionId]);
+  }, [sessionId, runId]);
 
   return (
     <div className="ff-iterm">
       <div className="ff-iterm-bar">
         <span className={`ff-iterm-status ff-iterm-${status.tone}`}>● {status.text}</span>
         <span className="ff-muted ff-small">Interactive — you are typing into the AI CLI directly</span>
+        {onMinimize ? (
+          <button type="button" className="ff-btn ff-btn-small" onClick={onMinimize}>
+            Hide
+          </button>
+        ) : null}
         <button type="button" className="ff-btn ff-btn-small" onClick={onClose}>
           Close terminal
         </button>
