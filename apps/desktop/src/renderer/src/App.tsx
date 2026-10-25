@@ -9,6 +9,9 @@ import { AccountsScreen } from "./screens/AccountsScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { SkillsScreen } from "./screens/SkillsScreen.js";
 import { UsageScreen } from "./screens/UsageScreen.js";
+import { WorkflowsScreen } from "./screens/WorkflowsScreen.js";
+import { WorkflowEditor } from "./screens/WorkflowEditor.js";
+import { PromptsScreen } from "./screens/PromptsScreen.js";
 import { AccountsBubble } from "./components/AccountsBubble.js";
 import { ClaudeCodeLauncher } from "./components/ClaudeCodeLauncher.js";
 import { ApprovalsBar } from "./components/ApprovalsBar.js";
@@ -24,20 +27,14 @@ export function App() {
   const projectId = "projectId" in screen ? screen.projectId : undefined;
   const project = useApp((s) => s.projects.find((p) => p.id === projectId));
   const runTitle = useApp((s) => (screen.name === "run" || screen.name === "matrix" ? s.runStates[screen.runId]?.run.title : undefined));
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  // Always starts collapsed to icons; it only expands when the user asks, and that is not remembered.
+  const [collapsed, setCollapsed] = useState(true);
 
   function toggleSidebar() {
-    setCollapsed((c) => {
-      try {
-        localStorage.setItem(SIDEBAR_KEY, c ? "0" : "1");
-      } catch {
-        // Not persisted; the sidebar still toggles for this session.
-      }
-      return !c;
-    });
+    setCollapsed((c) => !c);
   }
 
-  // Ctrl+\ (Cmd+\ on macOS) toggles the sidebar, as in Notion.
+  // Ctrl+\ (Cmd+\ on macOS) toggles the sidebar, as in Linear.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "\\") {
@@ -90,6 +87,12 @@ export function App() {
           <NavButton active={screen.name === "usage"} onClick={() => navigate({ name: "usage" })} icon="usage">
             Usage
           </NavButton>
+          <NavButton active={screen.name === "workflows" || screen.name === "workflow"} onClick={() => navigate({ name: "workflows" })} icon="workflows">
+            Workflows
+          </NavButton>
+          <NavButton active={screen.name === "prompts"} onClick={() => navigate({ name: "prompts" })} icon="prompts">
+            Prompts
+          </NavButton>
           <NavButton active={screen.name === "skills"} onClick={() => navigate({ name: "skills" })} icon="skills">
             Skills
           </NavButton>
@@ -129,7 +132,10 @@ export function App() {
         {screen.name === "matrix" && <TraceabilityMatrix projectId={screen.projectId} runId={screen.runId} />}
         {screen.name === "accounts" && <AccountsScreen />}
         {screen.name === "usage" && <UsageScreen />}
-        {screen.name === "skills" && <SkillsScreen {...(screen.nodeId ? { focusNodeId: screen.nodeId } : {})} />}
+        {screen.name === "skills" && <SkillsScreen {...(screen.step ? { focusStep: screen.step } : {})} />}
+        {screen.name === "workflows" && <WorkflowsScreen />}
+        {screen.name === "workflow" && <WorkflowEditor key={screen.workflowId} workflowId={screen.workflowId} />}
+        {screen.name === "prompts" && <PromptsScreen {...(screen.workflowId ? { workflowId: screen.workflowId } : {})} {...(screen.nodeId ? { nodeId: screen.nodeId } : {})} />}
         {screen.name === "settings" && <SettingsScreen />}
       </main>
       {screen.name !== "accounts" && <AccountsBubble />}
@@ -180,16 +186,6 @@ function ThemeSwitcher() {
       </div>
     </div>
   );
-}
-
-const SIDEBAR_KEY = "ff-sidebar-collapsed";
-
-function readCollapsed(): boolean {
-  try {
-    return localStorage.getItem(SIDEBAR_KEY) === "1";
-  } catch {
-    return false;
-  }
 }
 
 function NavButton({ active, onClick, sub, icon, children }: { active: boolean; onClick(): void; sub?: boolean; icon: NavIconName; children: string }) {

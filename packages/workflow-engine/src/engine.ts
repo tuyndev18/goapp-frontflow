@@ -614,6 +614,7 @@ export class WorkflowEngine {
       assumed: undefined,
       blockerSummary: undefined,
       waitingOn: undefined,
+      resumeState: undefined,
       startedAt: undefined,
       finishedAt: undefined,
     });
@@ -839,6 +840,7 @@ export class WorkflowEngine {
     const ctx: NodeExecutionContext = {
       runId: rt.run.id,
       projectId: rt.run.projectId,
+      workflowId: rt.run.workflowId,
       nodeId: spec.id,
       nodeRunId: nodeRun.id,
       nodeType: spec.type,
@@ -860,6 +862,15 @@ export class WorkflowEngine {
           nodeRunId: event.nodeRunId ?? nodeRun.id,
         } as AnyEvent);
       },
+      ...(nodeRun.resumeState ? { resumeState: structuredClone(nodeRun.resumeState) } : {}),
+      saveResumeState: (state) =>
+        this.enqueue(rt, async () => {
+          // A stale attempt (paused, cancelled or reset meanwhile) must not bring old state back.
+          if (rt.executions.get(spec.id) !== exec) return;
+          const node = this.node(rt, spec.id);
+          node.resumeState = structuredClone(state);
+          await this.store.saveNodeRun(structuredClone(node));
+        }),
     };
 
     let result: NodeResult | undefined;

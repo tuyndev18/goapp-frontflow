@@ -3,6 +3,7 @@ import {
   Background,
   Controls,
   EdgeLabelRenderer,
+  MiniMap,
   getSmoothStepPath,
   Handle,
   MarkerType,
@@ -21,28 +22,30 @@ import type { GraphNodeDto, RunStateDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { formatDuration, formatTime, stepDuration, type ActivityLine } from "../lib/activity.js";
-import { LANES, groupColor, groupOf, laneOf } from "../lib/groups.js";
+import { lanesOf, laneFor, nodeColor, type Lane } from "../lib/groups.js";
 import { stepLook } from "../lib/steps.js";
 import { useTheme } from "../lib/theme.js";
 
 /** n8n-style step: a square card with the icon, the name and one line underneath. */
 const CARD = 60;
-const NODE_W = 168;
-const NODE_H = 124;
+export const NODE_W = 168;
+export const NODE_H = 124;
 /** Wide enough between columns for the hand-off label of an edge and a decision's other way out. */
 const COL_W = NODE_W + 100;
 const ROW_H = NODE_H + 8;
 /** Swimlane geometry: the lane title sits in a strip on the left, steps start right of it. */
-const LANE_LABEL_W = 150;
+export const LANE_LABEL_W = 150;
 const LANE_PAD_X = 16;
-const LANE_PAD_Y = 12;
+export const LANE_PAD_Y = 12;
 /** Room between stages for the arrows that hand over from one stage to the next. */
 const LANE_GAP = 26;
 /** The canvas always shows the whole workflow (fit to the window); the controls still zoom in. */
-const FIT = { padding: 0.04, minZoom: 0.2, maxZoom: 1 } as const;
+export const FIT = { padding: 0.04, minZoom: 0.4, maxZoom: 1 } as const;
+/** Below this the step names are too small to read: the canvas pans instead of shrinking further. */
+const READABLE_ZOOM = 0.75;
 
 // Edge colours are SVG attributes (arrow markers), so they are literal hex rather than CSS variables.
-const EDGE = { done: "#1aae39", active: "#2a9d99", waiting: "#dd5b00", failed: "#e03e3e", idle: "#a39e98" } as const;
+const EDGE = { done: "#4cb782", active: "#26b5ce", waiting: "#f2994a", failed: "#eb5757", idle: "#8a8f98" } as const;
 type EdgeKind = keyof typeof EDGE;
 const EDGE_ICON: Record<EdgeKind, string> = { done: "✓", active: "▶", waiting: "⏸", failed: "✕", idle: "" };
 const EDGE_STATE: Record<EdgeKind, string> = { done: "delivered", active: "in progress", waiting: "waiting for your input", failed: "blocked", idle: "not yet" };
@@ -59,10 +62,8 @@ interface FlowEdgeData extends Record<string, unknown> {
   faded: boolean;
 }
 
-type CanvasSize = "collapsed" | "normal" | "large";
-const SIZE_KEY = "ff-canvas-size";
 
-interface LaneData extends Record<string, unknown> {
+export interface LaneData extends Record<string, unknown> {
   color: string;
   width: number;
   height: number;
@@ -79,13 +80,18 @@ interface FlowNodeData extends Record<string, unknown> {
 
 const CanvasContext = createContext<{ runId: string; onSelect(id: string): void }>({ runId: "", onSelect: () => {} });
 
-/** n8n-style workflow canvas: always visible above the run body, with manual actions on every step. */
+/**
+ * n8n-style workflow canvas beside the run panel, with manual actions on every step. It shows the
+ * whole workflow when that stays readable; otherwise it keeps a readable zoom, centres the step
+ * that matters (`focus`: the open one, else where the run waits or works) and the minimap shows the rest.
+ */
 export function GraphView({
   runId,
   graph,
   latest,
   lastByNode,
   selected,
+  focus,
   now,
   onSelect,
 }: {
@@ -93,13 +99,15 @@ export function GraphView({
   graph: RunStateDto["graph"];
   latest: Map<string, NodeRun>;
   lastByNode: Map<string, ActivityLine>;
-  selected?: string;
+  selected?: string | undefined;
+  focus?: string | undefined;
   now: number;
   onSelect(id: string): void;
 }) {
   const { resolved: colorMode } = useTheme();
-  const [size, setSize] = useState<CanvasSize>(readSize);
-  const { positions, lanes, width: graphWidth } = useMemo(() => layout(graph), [graph]);
+  const workflowLanes = useMemo(() => lanesOf(graph.lanes, graph.nodes), [graph.lanes, graph.nodes]);
+  const { positions, lanes, width: graphWidth } = useMemo(() => layout(graph, workflowLanes), [graph, workflowLanes]);
+  const graphHeight = Math.max(0, ...lanes.map((l) => l.y + l.height));
   const labels = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n.label])), [graph.nodes]);
 
   // Nodes are rebuilt every tick (`now`) without onNodesChange. A node object without `measured`
@@ -133,7 +141,7 @@ export function GraphView({
           measured: { width: NODE_W, height: NODE_H },
           data: {
             node: n,
-            color: groupColor(groupOf(n)),
+            color: nodeColor(workflowLanes, n),
             selected: n.id === selected,
             ...(nr ? { nodeRun: nr } : {}),
             ...(note ? { note } : {}),
@@ -142,7 +150,7 @@ export function GraphView({
         };
       }),
     ],
-    [graph.nodes, positions, lanes, graphWidth, latest, lastByNode, labels, selected, now],
+    [graph.nodes, workflowLanes, positions, lanes, graphWidth, latest, lastByNode, labels, selected, now],
   );
 
   const types = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n.type])), [graph.nodes]);
@@ -179,17 +187,8 @@ export function GraphView({
       });
   }, [graph.edges, latest, types, labels, selected]);
 
-  function resize(next: CanvasSize) {
-    setSize(next);
-    try {
-      localStorage.setItem(SIZE_KEY, next);
-    } catch {
-      // Not persisted; the size still applies for this session.
-    }
-  }
-
   return (
-    <section className={`ff-canvas ff-canvas-${size}`} aria-label="Workflow canvas">
+    <section className="ff-canvas" aria-label="Workflow canvas">
       <header className="ff-canvas-head">
         <h3>Workflow canvas</h3>
         <div className="ff-canvas-key" aria-label="How to read the canvas">
@@ -211,67 +210,94 @@ export function GraphView({
             </i>{" "}
             decision
           </span>
-          <span>arrows say what each step hands over</span>
-        </div>
-        <div className="ff-actions ff-canvas-tools">
-          {size !== "collapsed" ? (
-            <button type="button" className="ff-btn ff-btn-small" onClick={() => resize(size === "large" ? "normal" : "large")}>
-              {size === "large" ? "⤡ Shrink" : "⤢ Expand"}
-            </button>
-          ) : null}
-          <button type="button" className="ff-btn ff-btn-small" aria-expanded={size !== "collapsed"} onClick={() => resize(size === "collapsed" ? "normal" : "collapsed")}>
-            {size === "collapsed" ? "Show canvas" : "Hide"}
-          </button>
         </div>
       </header>
-      {size !== "collapsed" ? (
-        <CanvasContext.Provider value={{ runId, onSelect }}>
-          <div className="ff-graph">
-            <ReactFlow
-              key={size}
-              colorMode={colorMode}
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
-              onNodeClick={(_, n) => {
-                if (n.type === "step") onSelect(n.id);
-              }}
-              fitView
-              fitViewOptions={FIT}
-              nodesDraggable={false}
-              nodesConnectable={false}
-              elementsSelectable={false}
-              zoomOnScroll={false}
-              preventScrolling={false}
-              minZoom={FIT.minZoom}
-              maxZoom={1.5}
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background gap={24} />
-              <Controls position="bottom-right" showInteractive={false} fitViewOptions={FIT} />
-              <LaneHeaders lanes={lanes} />
-              <FitToWindow layoutKey={`${graphWidth}x${lanes.length}:${graph.nodes.length}`} />
-            </ReactFlow>
-          </div>
-        </CanvasContext.Provider>
-      ) : null}
+      <CanvasContext.Provider value={{ runId, onSelect }}>
+        <div className="ff-graph">
+          <ReactFlow
+            colorMode={colorMode}
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodeClick={(_, n) => {
+              if (n.type === "step") onSelect(n.id);
+            }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            // The canvas sits beside the panel: scroll pans it, Ctrl+scroll zooms; it fits the window when it can stay readable.
+            panOnScroll
+            zoomOnScroll={false}
+            minZoom={0.15}
+            maxZoom={1.5}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background gap={24} />
+            <Controls position="bottom-right" showInteractive={false} fitViewOptions={FIT} />
+            <LaneHeaders lanes={lanes} />
+            <MiniMap
+              className="ff-minimap"
+              position="bottom-left"
+              pannable
+              zoomable
+              ariaLabel="Workflow overview"
+              nodeColor={(n) => (n.type === "lane" ? "transparent" : EDGE[outputKind((n.data as FlowNodeData).nodeRun?.status)])}
+              nodeStrokeWidth={0}
+            />
+            <AutoView layoutKey={`${graphWidth}x${lanes.length}:${graph.nodes.length}`} width={graphWidth} height={graphHeight} positions={positions} focus={focus} />
+          </ReactFlow>
+        </div>
+      </CanvasContext.Provider>
     </section>
   );
 }
 
 /**
- * The whole workflow always fits the canvas: on open, whenever the window (and so the canvas) is
- * resized, and when the graph changes. Zooming with the controls stays possible in between.
+ * Keeps the canvas readable: on open, on resize and when the graph changes it fits the whole
+ * workflow if that is readable, else it shows the focus step (or the start) at a readable zoom.
+ * When the focus moves to a step out of view, it pans there. Zooming and panning by hand stay free.
  */
-function FitToWindow({ layoutKey }: { layoutKey: string }) {
-  const { fitView } = useReactFlow();
-  const width = useStore((s) => s.width);
-  const height = useStore((s) => s.height);
+function AutoView({
+  layoutKey,
+  width,
+  height,
+  positions,
+  focus,
+}: {
+  layoutKey: string;
+  width: number;
+  height: number;
+  positions: Map<string, { x: number; y: number }>;
+  focus: string | undefined;
+}) {
+  const { fitView, setCenter, getViewport } = useReactFlow();
+  const w = useStore((s) => s.width);
+  const h = useStore((s) => s.height);
+
   useEffect(() => {
-    if (!width || !height) return;
-    void fitView(FIT);
-  }, [width, height, layoutKey, fitView]);
+    if (!w || !h) return;
+    const fitZoom = Math.min(w / width, h / height) * 0.96;
+    if (fitZoom >= READABLE_ZOOM) {
+      void fitView(FIT);
+      return;
+    }
+    const at = focus ? positions.get(focus) : undefined;
+    // Without a focus, start where the workflow starts (its top-left corner).
+    const x = at ? at.x + NODE_W / 2 : w / 2 / READABLE_ZOOM;
+    const y = at ? at.y + NODE_H / 2 : h / 2 / READABLE_ZOOM;
+    void setCenter(x, y, { zoom: READABLE_ZOOM });
+  }, [w, h, layoutKey]);
+
+  useEffect(() => {
+    const at = focus ? positions.get(focus) : undefined;
+    if (!at || !w || !h) return;
+    const { x, y, zoom } = getViewport();
+    const left = at.x * zoom + x;
+    const top = at.y * zoom + y;
+    if (left >= 0 && top >= 0 && left + NODE_W * zoom <= w && top + NODE_H * zoom <= h) return;
+    void setCenter(at.x + NODE_W / 2, at.y + NODE_H / 2, { zoom, duration: 300 });
+  }, [focus]);
   return null;
 }
 
@@ -386,7 +412,7 @@ const StepNode = memo(function StepNode({ id, data }: NodeProps<Node<FlowNodeDat
 });
 
 /** Swimlane band of one workflow (spec §5 subgraphs); its title is drawn by LaneHeaders. */
-const LaneNode = memo(function LaneNode({ data }: NodeProps<Node<LaneData>>) {
+export const LaneNode = memo(function LaneNode({ data }: NodeProps<Node<LaneData>>) {
   return <div className="ff-lane" style={{ width: data.width, height: data.height, "--lane": data.color } as CSSProperties} aria-hidden="true" />;
 });
 
@@ -394,7 +420,7 @@ const LaneNode = memo(function LaneNode({ data }: NodeProps<Node<LaneData>>) {
  * Lane titles in a strip that follows the lanes vertically and zoom, but sticks to the left edge
  * when the canvas is panned to later steps, so every lane stays named.
  */
-function LaneHeaders({ lanes }: { lanes: LaneBox[] }) {
+export function LaneHeaders({ lanes }: { lanes: LaneBox[] }) {
   const [tx, ty, zoom] = useStore((s) => s.transform);
   return (
     <div className="ff-lane-headers" aria-hidden="true">
@@ -514,17 +540,8 @@ function noteFor(nr: NodeRun | undefined, last: ActivityLine | undefined, labels
   }
 }
 
-function readSize(): CanvasSize {
-  try {
-    const v = localStorage.getItem(SIZE_KEY);
-    if (v === "collapsed" || v === "normal" || v === "large") return v;
-  } catch {
-    // Storage unavailable: default size.
-  }
-  return "normal";
-}
 
-interface LaneBox {
+export interface LaneBox {
   id: string;
   title: string;
   subtitle: string;
@@ -534,14 +551,19 @@ interface LaneBox {
 }
 
 /**
- * One lane per stage, read like lines of text: top to bottom in run order (① UI, ② API review,
- * ③ integration, ④ tests), and inside a lane left to right by the steps' order within that stage.
+ * One lane per stage, read like lines of text: top to bottom in the workflow's lane order, and
+ * inside a lane left to right by the steps' order within that stage.
  * Only edges inside a lane set the columns, so every lane starts at the left edge and the whole
  * workflow stays compact enough to fit the window; hand-offs between stages go down to the next lane.
  * Steps of a lane sharing a column stack inside that lane.
  */
-function layout(graph: RunStateDto["graph"]): { positions: Map<string, { x: number; y: number }>; lanes: LaneBox[]; width: number } {
-  const laneOfNode = new Map(graph.nodes.map((n) => [n.id, laneOf(groupOf(n))]));
+export function layout(
+  graph: Pick<RunStateDto["graph"], "nodes" | "edges">,
+  workflowLanes: Lane[],
+  /** The workflow editor shows empty lanes too, so steps can be dropped in them. */
+  options: { emptyLanes?: boolean } = {},
+): { positions: Map<string, { x: number; y: number }>; lanes: LaneBox[]; width: number } {
+  const laneOfNode = new Map(graph.nodes.map((n) => [n.id, laneFor(workflowLanes, n)?.id]));
   const incoming = new Map<string, string[]>(graph.nodes.map((n) => [n.id, []]));
   for (const e of graph.edges) if (laneOfNode.get(e.source) === laneOfNode.get(e.target)) incoming.get(e.target)?.push(e.source);
   const depth = new Map<string, number>();
@@ -562,33 +584,29 @@ function layout(graph: RunStateDto["graph"]): { positions: Map<string, { x: numb
     if (next.length) depth.set(n.id, Math.max(0, Math.min(...next) - 1));
   }
 
-  // Known lanes first, in spec order; a group outside them gets its own lane at the end.
-  const laneIds = [...LANES.map((l) => l.id as string)];
-  for (const n of graph.nodes) {
-    const lane = laneOf(groupOf(n));
-    if (!laneIds.includes(lane)) laneIds.push(lane);
-  }
-
   const positions = new Map<string, { x: number; y: number }>();
   const lanes: LaneBox[] = [];
   let y = 0;
-  for (const laneId of laneIds) {
-    const members = graph.nodes.filter((n) => laneOf(groupOf(n)) === laneId);
-    if (!members.length) continue;
+  for (const lane of workflowLanes) {
+    const members = graph.nodes.filter((n) => laneOfNode.get(n.id) === lane.id);
+    if (!members.length && !options.emptyLanes) continue;
+    // Steps the user placed keep their spot (relative to the lane); the others are laid out in columns.
+    const placed = members.filter((n) => n.position);
     const columns = new Map<number, string[]>();
-    for (const n of members) {
+    for (const n of members.filter((m) => !m.position)) {
       const col = depth.get(n.id) ?? 0;
       columns.set(col, [...(columns.get(col) ?? []), n.id]);
     }
-    const rows = Math.max(...[...columns.values()].map((c) => c.length));
-    const height = rows * ROW_H - (ROW_H - NODE_H) + 2 * LANE_PAD_Y;
+    const rows = Math.max(1, ...[...columns.values()].map((c) => c.length));
+    const content = Math.max(rows * ROW_H - (ROW_H - NODE_H), ...placed.map((n) => (n.position?.y ?? 0) + NODE_H));
+    const height = content + 2 * LANE_PAD_Y;
+    for (const n of placed) positions.set(n.id, { x: Math.max(LANE_LABEL_W, n.position?.x ?? 0), y: y + LANE_PAD_Y + Math.max(0, n.position?.y ?? 0) });
     for (const [col, ids] of columns) {
       // Stacks are centred in the lane; definition order is kept inside a stack.
       const top = y + LANE_PAD_Y + ((rows - ids.length) * ROW_H) / 2;
       ids.forEach((id, row) => positions.set(id, { x: LANE_LABEL_W + col * COL_W, y: top + row * ROW_H }));
     }
-    const lane = LANES.find((l) => l.id === laneId);
-    lanes.push({ id: laneId, title: lane?.title ?? laneId, subtitle: lane?.subtitle ?? "", color: lane?.color ?? groupColor(laneId), y, height });
+    lanes.push({ id: lane.id, title: lane.title, subtitle: lane.subtitle, color: lane.color, y, height });
     y += height + LANE_GAP;
   }
   const width = Math.max(0, ...[...positions.values()].map((p) => p.x)) + NODE_W + LANE_PAD_X;

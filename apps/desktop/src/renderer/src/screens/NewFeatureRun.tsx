@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { WorkflowDto, WorkflowSummaryDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
+
+const FEATURE_DELIVERY = "feature-delivery";
 
 /** Claude Code's `--model` aliases: each names the latest model of its family. */
 const MODELS = [
@@ -44,6 +47,27 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState<Effort>("");
+  const [workflows, setWorkflows] = useState<WorkflowSummaryDto[]>();
+  const [workflowId, setWorkflowId] = useState(FEATURE_DELIVERY);
+  const [workflow, setWorkflow] = useState<WorkflowDto>();
+
+  useEffect(() => {
+    api.invoke("workflows:list").then(
+      (s) => setWorkflows(s.workflows),
+      (err) => notify("error", errorMessage(err)),
+    );
+  }, [notify]);
+  useEffect(() => {
+    let live = true;
+    setWorkflow(undefined);
+    api.invoke("workflows:get", { workflowId }).then(
+      (w) => live && setWorkflow(w),
+      (err) => notify("error", errorMessage(err)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [workflowId, notify]);
 
   async function submit() {
     if (!title.trim()) return;
@@ -52,6 +76,7 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
       const state = await api.invoke("runs:create", {
         projectId,
         title: title.trim(),
+        workflowId,
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
       });
@@ -73,7 +98,7 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
             ← {projectName ?? "Project"}
           </button>
           <h1>New feature</h1>
-          <p className="ff-muted">Give the feature a name. The workflow asks for the Figma design, the API contract and the BA specification in the steps that need them.</p>
+          <p className="ff-muted">Give the feature a name and choose its workflow. The workflow asks for what it needs (Figma design, documents, your checks) in the steps that need them.</p>
         </div>
       </header>
       <form
@@ -88,6 +113,37 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
           <input className="ff-input ff-input-lg" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Cancel order" autoFocus maxLength={200} />
         </label>
         <div className="ff-field">
+          <span>Workflow</span>
+          <div className="ff-workflow-choice" role="radiogroup" aria-label="Workflow">
+            {(workflows ?? []).map((w) => (
+              <button key={w.id} type="button" role="radio" aria-checked={workflowId === w.id} className={`ff-workflow-option${workflowId === w.id ? " ff-workflow-option-active" : ""}`} onClick={() => setWorkflowId(w.id)}>
+                <strong>{w.name}</strong>
+                <span className="ff-muted ff-small">
+                  {w.steps} steps{w.builtin ? " · built-in" : ""}
+                </span>
+                {w.description ? <span className="ff-small">{w.description}</span> : null}
+              </button>
+            ))}
+          </div>
+          <small className="ff-muted">
+            Change workflows, their prompts and skills in{" "}
+            <button type="button" className="ff-link" onClick={() => navigate({ name: "workflows" })}>
+              Workflows
+            </button>
+            .
+          </small>
+        </div>
+        {workflow?.missingPrompts.length ? (
+          <div className="ff-callout ff-callout-warning" role="alert">
+            <p>
+              <strong>⚠ Missing prompts:</strong> {workflow.missingPrompts.map((id) => workflow.nodes.find((n) => n.id === id)?.label ?? id).join(", ")}. Write them before starting this workflow.
+            </p>
+            <button type="button" className="ff-btn ff-btn-small" onClick={() => navigate({ name: "prompts", workflowId })}>
+              Open prompts
+            </button>
+          </div>
+        ) : null}
+        <div className="ff-field">
           <span>Model</span>
           <ChoiceRow label="Model" options={MODELS} value={model} onChange={setModel} />
           <small className="ff-muted">{MODELS.find((m) => m.value === model)?.hint}</small>
@@ -97,6 +153,20 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
           <ChoiceRow<Effort> label="Effort" options={EFFORTS} value={effort} onChange={setEffort} />
           <small className="ff-muted">{EFFORTS.find((x) => x.value === effort)?.hint} Every AI step of this feature runs Claude Code in its terminal with this model and effort.</small>
         </div>
+        {workflowId !== FEATURE_DELIVERY ? (
+          workflow ? (
+            <ol className="ff-next-steps">
+              {workflow.lanes.map((lane) => {
+                const steps = workflow.nodes.filter((n) => (lane.groups ?? [lane.id]).includes(n.group ?? ""));
+                return steps.length ? (
+                  <li key={lane.id}>
+                    <strong>{lane.title}</strong> — {steps.map((n) => n.label).join(" → ")}
+                  </li>
+                ) : null;
+              })}
+            </ol>
+          ) : null
+        ) : (
         <ol className="ff-next-steps">
           <li>
             <strong>Select Figma scope</strong> — push frames from the GoApp Figma plugin&apos;s FrontFlow button, then click Run: the AI agent builds the UI in your project right away
@@ -109,8 +179,9 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
           </li>
           <li>FrontFlow drives AI agents in your project folder: UI first, then API review and integration, then the acceptance tests and the report; you can follow every step live</li>
         </ol>
+        )}
         <div className="ff-actions">
-          <button type="submit" className="ff-btn ff-btn-primary" disabled={!title.trim() || submitting}>
+          <button type="submit" className="ff-btn ff-btn-primary" disabled={!title.trim() || submitting || !!workflow?.missingPrompts.length}>
             {submitting ? "Creating…" : "Create feature"}
           </button>
           <span className="ff-muted ff-small">AI engine: Claude Code, in an interactive terminal session</span>

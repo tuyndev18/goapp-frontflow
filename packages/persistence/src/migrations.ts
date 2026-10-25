@@ -357,6 +357,14 @@ END;
 ALTER TABLE git_checkpoints RENAME COLUMN worktree_path TO project_path;
 `,
   },
+  {
+    version: 4,
+    name: "node_run_resume_state",
+    up: `
+-- What a node keeps for its next attempt (its Claude session to resume), cleared on reset.
+ALTER TABLE node_runs ADD COLUMN resume_state_json TEXT;
+`,
+  },
 ];
 
 export class MigrationError extends Error {

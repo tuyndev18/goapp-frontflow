@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
+import { FEATURE_DELIVERY_WORKFLOW_ID } from "@frontflow/workflow-engine";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 /**
@@ -8,8 +9,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
  * the instructions refer to by relative path (templates, scripts, references).
  *
  * The library lives in one folder of the app data directory; which skills apply to which
- * workflow step is kept next to it in assignments.json. Agent steps get the skills of their
- * node through {@link SkillSource}.
+ * workflow step is kept next to it in assignments.json, keyed by {@link stepKey}. Agent steps
+ * get the skills of their step through {@link SkillSource}.
  */
 
 export const SKILL_FILE = "SKILL.md";
@@ -52,17 +53,22 @@ export interface SkillInput {
   body: string;
 }
 
-/** nodeId → skill names, in the order the user attached them. */
+/** {@link stepKey} → skill names, in the order the user attached them. */
 export type SkillAssignments = Record<string, string[]>;
+
+/** A step of one workflow: node ids are only unique within their workflow. */
+export function stepKey(workflowId: string, nodeId: string): string {
+  return `${workflowId}/${nodeId}`;
+}
 
 export interface SkillImportResult {
   imported: string[];
   skipped: Array<{ path: string; reason: string }>;
 }
 
-/** What agent steps need from the host: the skills attached to a workflow node. */
+/** What agent steps need from the host: the skills attached to a workflow step. */
 export interface SkillSource {
-  forNode(nodeId: string): Skill[] | Promise<Skill[]>;
+  forNode(workflowId: string, nodeId: string): Skill[] | Promise<Skill[]>;
 }
 
 export class SkillError extends Error {
@@ -219,10 +225,11 @@ export class SkillLibrary implements SkillSource {
       const nodes = raw.nodes && typeof raw.nodes === "object" ? (raw.nodes as Record<string, unknown>) : {};
       const out: SkillAssignments = {};
       for (const [stored, names] of Object.entries(nodes)) {
-        // Steps of the v2 workflow keep their skills under the step that replaced them.
-        const nodeId = RENAMED_STEPS[stored] ?? stored;
+        // Before workflows could be chosen, keys were node ids of the one workflow (feature delivery);
+        // steps of its v2 graph keep their skills under the step that replaced them.
+        const key = stored.includes("/") ? stored : stepKey(FEATURE_DELIVERY_WORKFLOW_ID, RENAMED_STEPS[stored] ?? stored);
         const list = Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [];
-        out[nodeId] = [...new Set([...(out[nodeId] ?? []), ...list])];
+        out[key] = [...new Set([...(out[key] ?? []), ...list])];
       }
       return out;
     } catch {
@@ -231,19 +238,36 @@ export class SkillLibrary implements SkillSource {
   }
 
   /** Replaces the skills of one step; unknown names are rejected so a typo never silently drops a skill. */
-  setNodeSkills(nodeId: string, names: string[]): SkillAssignments {
+  setNodeSkills(workflowId: string, nodeId: string, names: string[]): SkillAssignments {
     const unique = [...new Set(names)];
     const missing = unique.filter((n) => !this.get(n));
     if (missing.length) throw new SkillError("SKILL_NOT_FOUND", `Unknown skill${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`);
     const assignments = this.assignments();
-    if (unique.length) assignments[nodeId] = unique;
-    else delete assignments[nodeId];
+    const key = stepKey(workflowId, nodeId);
+    if (unique.length) assignments[key] = unique;
+    else delete assignments[key];
     this.writeAssignments(assignments);
     return assignments;
   }
 
-  forNode(nodeId: string): Skill[] {
-    return (this.assignments()[nodeId] ?? []).flatMap((name) => {
+  /** A cloned workflow starts with the skills of the steps it was cloned from. */
+  copyWorkflow(fromId: string, toId: string): void {
+    const assignments = this.assignments();
+    for (const [key, names] of Object.entries(assignments)) {
+      if (key.startsWith(`${fromId}/`)) assignments[stepKey(toId, key.slice(fromId.length + 1))] = [...names];
+    }
+    this.writeAssignments(assignments);
+  }
+
+  /** Detaches every skill from a deleted workflow, so a new workflow reusing its id starts clean. */
+  forgetWorkflow(workflowId: string): void {
+    const assignments = this.assignments();
+    for (const key of Object.keys(assignments)) if (key.startsWith(`${workflowId}/`)) delete assignments[key];
+    this.writeAssignments(assignments);
+  }
+
+  forNode(workflowId: string, nodeId: string): Skill[] {
+    return (this.assignments()[stepKey(workflowId, nodeId)] ?? []).flatMap((name) => {
       const skill = this.get(name);
       return skill ? [skill] : [];
     });

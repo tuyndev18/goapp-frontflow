@@ -1,58 +1,59 @@
 /*
- * Design tokens follow skill/design-skills/notion/SKILL.md:
- * warm paper canvas + white hairline cards, Inter with tight heavy headings,
- * one structural accent (Notion blue) for actions / links / active / focus,
- * sticker palette for decoration only (lane dots, tags), barely-there layered shadows.
+ * Design tokens follow skill/design-skills/linear/SKILL.md:
+ * near-black canvas with a four-step surface ladder and 1px hairlines for depth (no drop shadows on dark),
+ * one scarce accent (Linear lavender) for the primary action, links, focus and the brand mark,
+ * a product-style label palette for status and decoration only, Inter at 400–600 with tight display tracking.
+ * Dark is the default theme; the light theme mirrors the same roles on a white canvas.
  *
- * Spacing: 8px base (4 · 8 · 12 · 16 · 24 · 28 · 32). Page gutter 32px, panel gutter 24px.
+ * Spacing: 4px base (4 · 8 · 12 · 16 · 24 · 32 · 48). Page gutter 32px, panel gutter 24px.
  */
 :root {
   /* Brand */
-  --color-primary: #0075de;
-  --color-primary-active: #005bab;
+  --color-primary: #5e6ad2;
+  --color-primary-active: #4c57c0;
   --color-on-primary: #ffffff;
-  --color-secondary: #213183;
+  --color-secondary: #7a7fad;
 
-  /* Sticker palette (decoration only) */
-  --color-accent-sky: #62aef0;
-  --color-accent-purple: #d6b6f6;
-  --color-accent-purple-deep: #391c57;
-  --color-accent-pink: #ff64c8;
-  --color-accent-orange: #dd5b00;
-  --color-accent-orange-deep: #793400;
-  --color-accent-teal: #2a9d99;
-  --color-accent-green: #1aae39;
-  --color-accent-brown: #523410;
+  /* Label palette (status tones and decoration only) */
+  --color-accent-sky: #4ea7fc;
+  --color-accent-purple: #bb87fc;
+  --color-accent-purple-deep: #4b2d7f;
+  --color-accent-pink: #e2609e;
+  --color-accent-orange: #f2994a;
+  --color-accent-orange-deep: #7a4512;
+  --color-accent-teal: #26b5ce;
+  --color-accent-green: #4cb782;
+  --color-accent-brown: #8a6a3d;
 
   /* Surface */
   --color-canvas: #ffffff;
-  --color-canvas-soft: #f6f5f4;
-  --color-hairline: #e6e6e6;
-  --color-input-border: #dddddd;
+  --color-canvas-soft: #f7f7f8;
+  --color-hairline: #e6e6e9;
+  --color-input-border: #d8d8dd;
 
   /* Text */
-  --color-ink: rgba(0, 0, 0, 0.95);
-  --color-ink-secondary: #31302e;
-  --color-ink-muted: #615d59;
-  --color-ink-faint: #a39e98;
+  --color-ink: #1b1c1f;
+  --color-ink-secondary: #3c4149;
+  --color-ink-muted: #6b6f76;
+  --color-ink-faint: #9c9fa4;
 
   /* Type */
-  --font-body: "NotionInter", "Inter", -apple-system, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-body: "Inter Variable", "Inter", "SF Pro Display", -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Radius */
   --rounded-xs: 4px;
-  --rounded-sm: 5px;
+  --rounded-sm: 6px;
   --rounded-md: 8px;
   --rounded-lg: 12px;
   --rounded-xl: 16px;
   --rounded-full: 9999px;
 
-  /* Elevation */
-  --shadow-1: rgba(0, 0, 0, 0.01) 0 0.175px 1.041px, rgba(0, 0, 0, 0.02) 0 0.8px 2.925px, rgba(0, 0, 0, 0.027) 0 2.025px 7.847px,
-    rgba(0, 0, 0, 0.04) 0 4px 18px;
-  --shadow-2: rgba(0, 0, 0, 0.01) 0 1px 3px, rgba(0, 0, 0, 0.02) 0 3px 7px, rgba(0, 0, 0, 0.02) 0 7px 15px, rgba(0, 0, 0, 0.04) 0 14px 28px,
-    rgba(0, 0, 0, 0.05) 0 23px 52px;
+  /* Elevation: hairlines carry depth; shadows only lift floating layers (menus, dialogs, toasts). */
+  --shadow-1: 0 1px 2px rgba(16, 17, 20, 0.04), 0 2px 8px rgba(16, 17, 20, 0.05);
+  --shadow-2: 0 0 0 1px rgba(16, 17, 20, 0.06), 0 8px 24px rgba(16, 17, 20, 0.1), 0 24px 48px rgba(16, 17, 20, 0.08);
+  /* The faint top-edge highlight of a lifted panel; only visible on dark. */
+  --edge: none;
 
   /* Layout */
   --page-x: 32px;
@@ -62,9 +63,9 @@
   /* App roles */
   --bg: var(--color-canvas-soft);
   --surface: var(--color-canvas);
-  --surface-2: var(--color-canvas-soft);
-  --surface-3: #efeeec;
-  --hover: rgba(55, 53, 47, 0.06);
+  --surface-2: #f4f4f6;
+  --surface-3: #ececef;
+  --hover: rgba(20, 22, 30, 0.05);
   --border: var(--color-hairline);
   --border-strong: var(--color-input-border);
   --text: var(--color-ink);
@@ -73,75 +74,84 @@
   --muted-soft: var(--color-ink-faint);
   --primary: var(--color-primary);
   --primary-active: var(--color-primary-active);
-  --primary-soft: color-mix(in srgb, var(--color-primary) 9%, transparent);
+  --primary-soft: color-mix(in srgb, var(--color-primary) 10%, transparent);
   --primary-text: var(--color-on-primary);
-  /* Status tones come from the sticker palette, deepened so text stays readable on white. */
-  --success: color-mix(in srgb, var(--color-accent-green) 70%, #000);
-  --success-soft: color-mix(in srgb, var(--color-accent-green) 11%, transparent);
+  /* Status tones come from the label palette, deepened so text stays readable on white. */
+  --success: color-mix(in srgb, var(--color-accent-green) 72%, #000);
+  --success-soft: color-mix(in srgb, var(--color-accent-green) 13%, transparent);
   --success-dot: var(--color-accent-green);
-  --info: color-mix(in srgb, var(--color-accent-teal) 78%, #000);
-  --info-soft: color-mix(in srgb, var(--color-accent-teal) 11%, transparent);
-  --info-dot: var(--color-accent-teal);
-  --warning: color-mix(in srgb, var(--color-accent-orange) 85%, #000);
-  --warning-soft: color-mix(in srgb, var(--color-accent-orange) 9%, transparent);
+  --info: color-mix(in srgb, var(--color-accent-sky) 68%, #000);
+  --info-soft: color-mix(in srgb, var(--color-accent-sky) 13%, transparent);
+  --info-dot: var(--color-accent-sky);
+  --warning: color-mix(in srgb, var(--color-accent-orange) 70%, #000);
+  --warning-soft: color-mix(in srgb, var(--color-accent-orange) 14%, transparent);
   --warning-dot: var(--color-accent-orange);
-  --danger: #d44c47;
-  --danger-soft: color-mix(in srgb, #e03e3e 10%, transparent);
-  --danger-dot: #e03e3e;
-  --assumed: color-mix(in srgb, var(--color-accent-pink) 55%, #000);
-  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 12%, transparent);
+  --danger: #d13f3f;
+  --danger-soft: color-mix(in srgb, #eb5757 12%, transparent);
+  --danger-dot: #eb5757;
+  --assumed: color-mix(in srgb, var(--color-accent-pink) 70%, #000);
+  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 13%, transparent);
   --ai: var(--color-accent-purple-deep);
-  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 45%, transparent);
-  --focus: var(--color-primary);
-  --sidebar: var(--color-canvas);
+  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 22%, transparent);
+  --focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  --sidebar: var(--color-canvas-soft);
   --feed-bg: var(--color-canvas);
-  --code-bg: var(--color-canvas-soft);
+  --code-bg: var(--surface-2);
 
   /* Terminals stay dark in both themes */
-  --term-bg: #191919;
-  --term-bg-2: #202020;
-  --term-bg-3: #2c2c2c;
-  --term-line: #2f2f2f;
-  --term-text: #e6e6e6;
-  --term-muted: #9b9a97;
+  --term-bg: #0f1011;
+  --term-bg-2: #141516;
+  --term-bg-3: #1f2023;
+  --term-line: #23252a;
+  --term-text: #d0d6e0;
+  --term-muted: #8a8f98;
 
   color-scheme: light;
   font-family: var(--font-body);
-  font-feature-settings: "lnum", "locl";
+  font-feature-settings: "cv01", "ss03", "lnum", "locl";
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
 }
 
-/* Night mode — lib/theme.ts sets data-theme on <html> (light / dark / system). */
+/* Night mode (the default) — lib/theme.ts sets data-theme on <html> (light / dark / system). */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-primary: #2383e2;
-  --color-primary-active: #1a6fc4;
-  --bg: #191919;
-  --surface: #202020;
-  --surface-2: #252525;
-  --surface-3: #2f2f2f;
-  --hover: rgba(255, 255, 255, 0.055);
-  --border: #2f2f2f;
-  --border-strong: #3a3a3a;
-  --text: rgba(255, 255, 255, 0.92);
-  --text-body: rgba(255, 255, 255, 0.81);
-  --muted: #9b9a97;
-  --muted-soft: #6f6e69;
-  --success: #4fc46b;
-  --info: #4dc4bf;
-  --warning: #f08a3c;
-  --danger: #ef6b66;
-  --assumed: #ff8fd6;
+  --color-primary: #5e6ad2;
+  /* On dark the hover state lightens, as Linear's CTA does. */
+  --color-primary-active: #828fff;
+  --bg: #010102;
+  --surface: #0f1011;
+  --surface-2: #141516;
+  --surface-3: #1c1d1f;
+  --hover: rgba(255, 255, 255, 0.045);
+  --border: #23252a;
+  --border-strong: #34363c;
+  --text: #f7f8f8;
+  --text-body: #d0d6e0;
+  --muted: #8a8f98;
+  --muted-soft: #62666d;
+  --primary-soft: color-mix(in srgb, var(--color-primary) 20%, transparent);
+  --success: #4cb782;
+  --success-soft: color-mix(in srgb, var(--color-accent-green) 15%, transparent);
+  --info: #4ea7fc;
+  --info-soft: color-mix(in srgb, var(--color-accent-sky) 15%, transparent);
+  --warning: #f2994a;
+  --warning-soft: color-mix(in srgb, var(--color-accent-orange) 15%, transparent);
+  --danger: #eb5757;
+  --danger-soft: color-mix(in srgb, #eb5757 15%, transparent);
+  --assumed: #f087bd;
+  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 16%, transparent);
   --ai: var(--color-accent-purple);
-  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 18%, transparent);
-  --sidebar: #202020;
-  --feed-bg: #202020;
-  --code-bg: #252525;
-  --shadow-1: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 18px rgba(0, 0, 0, 0.3);
-  --shadow-2: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 23px 52px rgba(0, 0, 0, 0.5);
+  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 16%, transparent);
+  --focus: color-mix(in srgb, #5e69d1 60%, transparent);
+  --sidebar: #010102;
+  --feed-bg: #0f1011;
+  --code-bg: #141516;
+  --shadow-1: 0 0 0 1px #23252a, 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 0 0 1px #2a2c31, 0 16px 48px rgba(0, 0, 0, 0.6);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 * {
@@ -162,18 +172,18 @@ h1,
 h2,
 h3 {
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
 }
 h1 {
-  font-size: 26px;
-  line-height: 1.23;
-  letter-spacing: -0.625px;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
   margin: 0;
 }
 h2 {
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.3;
-  letter-spacing: -0.25px;
+  letter-spacing: -0.2px;
   margin: 0 0 16px;
 }
 h3 {
@@ -188,8 +198,8 @@ p {
 code {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--danger);
-  background: var(--hover);
+  color: var(--text);
+  background: var(--surface-3);
   padding: 1px 4px;
   border-radius: var(--rounded-xs);
 }
@@ -229,7 +239,7 @@ a {
 }
 .ff-brand strong {
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.25px;
   line-height: 24px;
   color: var(--text);
@@ -253,7 +263,7 @@ a {
 .ff-nav-project {
   padding: 0 12px 6px;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.125px;
   color: var(--text);
 }
@@ -275,10 +285,11 @@ a {
   background: var(--hover);
   color: var(--text);
 }
+/* Selected = surface lift, as in Linear's sidebar; lavender stays for actions and focus. */
 .ff-nav-active,
 .ff-nav-active:hover {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background: var(--surface-3);
+  color: var(--text);
 }
 .ff-nav-sub {
   width: calc(100% - 12px);
@@ -476,10 +487,10 @@ a {
   color: var(--text);
 }
 .ff-eyebrow {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.125px;
-  color: var(--muted-soft);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--muted);
 }
 
 /* ---------- Generic ---------- */
@@ -507,13 +518,14 @@ a {
   align-items: center;
   flex-wrap: wrap;
 }
-.ff-grid-2 {
+/* Project overview: runs take the room, readiness and profile sit in a side column. */
+.ff-overview {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 24px;
   align-items: start;
 }
-.ff-grid-2 > .ff-card {
+.ff-overview > .ff-card {
   margin: 0;
 }
 .ff-split {
@@ -523,7 +535,7 @@ a {
   align-items: start;
 }
 @media (max-width: 1100px) {
-  .ff-grid-2,
+  .ff-overview,
   .ff-split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -532,6 +544,7 @@ a {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
+  box-shadow: var(--edge);
   padding: 24px;
   margin: 0 0 24px;
 }
@@ -595,7 +608,7 @@ a {
 }
 .ff-code {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 3px;
   background: var(--surface-2);
   color: var(--text);
@@ -607,11 +620,6 @@ a {
 }
 .ff-warning {
   color: var(--warning);
-}
-.ff-warnings {
-  color: var(--warning);
-  margin: 0 0 24px;
-  padding-left: 20px;
 }
 .ff-pad {
   padding: 16px var(--panel-x);
@@ -652,9 +660,7 @@ a {
   font-size: 13px;
 }
 .ff-btn-primary {
-  padding: 0 16px;
   border-color: var(--primary);
-  border-radius: var(--rounded-full);
   background: var(--primary);
   color: var(--primary-text);
 }
@@ -671,9 +677,8 @@ a {
 }
 .ff-btn-danger-solid {
   border-color: var(--danger-dot);
-  border-radius: var(--rounded-full);
   background: var(--danger-dot);
-  color: #fff;
+  color: var(--primary-text);
 }
 .ff-btn-danger-solid:hover:not(:disabled) {
   background: var(--danger);
@@ -790,8 +795,8 @@ textarea.ff-input {
 .ff-input:focus,
 .ff-input:focus-visible {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: var(--shadow-1), 0 0 0 2px var(--primary-soft);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 2px var(--focus);
 }
 .ff-input::placeholder {
   color: var(--muted-soft);
@@ -1262,19 +1267,6 @@ input[type="radio"] {
 .ff-table-compact tbody th {
   vertical-align: middle;
 }
-.ff-profile-table {
-  table-layout: fixed;
-}
-.ff-profile-table th:nth-child(1) {
-  width: 28%;
-}
-.ff-profile-table th:nth-child(2) {
-  width: 32%;
-}
-.ff-profile-table td,
-.ff-profile-table th {
-  overflow-wrap: anywhere;
-}
 .ff-row-active {
   background: var(--primary-soft);
 }
@@ -1285,19 +1277,6 @@ input[type="radio"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.ff-dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 8px 16px;
-  margin: 0;
-}
-.ff-dl dt {
-  color: var(--muted);
-}
-.ff-dl dd {
-  margin: 0;
-  color: var(--text);
 }
 .ff-pre {
   margin: 0;
@@ -1323,27 +1302,45 @@ input[type="radio"] {
 }
 
 /* ---------- Projects ---------- */
-.ff-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 24px;
-}
-.ff-project-card {
-  display: flex;
-  flex-direction: column;
+/* One row per project, like a Linear list view: who, latest run, activity. */
+.ff-project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
-  transition: box-shadow 0.15s;
+  box-shadow: var(--edge);
+  overflow: hidden;
 }
-.ff-project-card:hover {
-  box-shadow: var(--shadow-1);
+.ff-project-list-head,
+.ff-project-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(240px, 1.4fr) 150px 28px;
+  gap: 24px;
+  align-items: center;
+  padding: 12px 16px;
 }
-.ff-project-open {
+.ff-project-list-head {
+  padding-block: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ff-project-row + .ff-project-row {
+  border-top: 1px solid var(--border);
+}
+.ff-project-row:hover {
+  background: var(--hover);
+}
+.ff-project-main {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 24px 24px 16px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
   background: none;
   border: 0;
   color: inherit;
@@ -1351,20 +1348,208 @@ input[type="radio"] {
   text-align: left;
   cursor: pointer;
 }
-.ff-project-open h2 {
-  margin: 0;
+.ff-project-main:hover strong {
+  color: var(--primary);
 }
-.ff-project-footer {
+.ff-project-avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--rounded-md);
+  color: var(--primary-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.ff-project-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ff-project-who strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.ff-project-run {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ff-project-runlink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.ff-project-runlink:hover > .ff-ellipsis {
+  color: var(--primary);
+}
+.ff-project-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ff-project-progress .ff-lanes {
+  flex: 1;
+  max-width: 200px;
+}
+.ff-project-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+.ff-project-activity strong {
+  color: var(--text);
+  font-weight: 600;
+}
+@media (max-width: 900px) {
+  .ff-project-list-head {
+    display: none;
+  }
+  .ff-project-row {
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 8px 16px;
+  }
+  .ff-project-row > .ff-icon-btn {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .ff-project-run,
+  .ff-project-activity {
+    grid-column: 1;
+    padding-left: 48px;
+  }
+}
+
+/* What waits for the user, above the lists that hold it. */
+.ff-attention {
+  margin: 0 0 24px;
+  padding: 16px 20px;
+  border: 1px solid color-mix(in srgb, var(--warning-dot) 25%, transparent);
+  border-radius: var(--rounded-lg);
+  background: var(--warning-soft);
+}
+.ff-attention h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: var(--warning);
+}
+.ff-attention h2 .ff-count {
+  margin-left: 0;
+}
+.ff-attention ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ff-attention li {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+.ff-attention-where {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+.ff-attention-steps {
+  display: flex;
   gap: 8px;
-  min-height: 52px;
-  padding: 8px 16px 8px 24px;
-  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+/* Run progress: one bar per stage, filled by its finished steps; the text line next to it carries the state. */
+.ff-lanes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 3px;
+  min-width: 120px;
+}
+.ff-lane-cell {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--rounded-full);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.ff-lane-fill {
+  display: block;
+  height: 100%;
+  background: var(--success-dot);
+}
+.ff-lane-active .ff-lane-fill {
+  background: var(--info-dot);
+}
+.ff-lane-attention {
+  box-shadow: inset 0 0 0 1px var(--warning-dot);
+}
+.ff-lane-attention .ff-lane-fill {
+  background: var(--warning-dot);
+}
+.ff-lane-failed {
+  box-shadow: inset 0 0 0 1px var(--danger-dot);
+}
+.ff-lane-failed .ff-lane-fill {
+  background: var(--danger-dot);
+}
+.ff-now-line {
+  min-width: 0;
+  font-size: 13px;
+}
+.ff-now-warning {
+  color: var(--warning);
+  font-weight: 500;
+}
+.ff-now-danger {
+  color: var(--danger);
+  font-weight: 500;
+}
+.ff-now-info {
+  color: var(--info);
+}
+.ff-now-success {
+  color: var(--success);
+}
+.ff-now-muted {
+  color: var(--muted);
 }
 
 /* run list (project overview) */
+.ff-run-group + .ff-run-group {
+  margin-top: 24px;
+}
+.ff-run-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ff-run-group h3 .ff-count {
+  margin-left: 4px;
+}
 .ff-run-list {
   list-style: none;
   margin: 0;
@@ -1387,11 +1572,10 @@ input[type="radio"] {
 .ff-run-open {
   flex: 1;
   min-width: 0;
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
   background: none;
   border: 0;
   color: var(--text);
@@ -1399,11 +1583,107 @@ input[type="radio"] {
   text-align: left;
   cursor: pointer;
 }
-.ff-run-open > .ff-badge {
-  justify-self: start;
+.ff-run-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ff-run-top .ff-run-name {
+  flex: 1;
 }
 .ff-run-name {
   font-weight: 600;
+}
+.ff-run-open:hover .ff-run-name {
+  color: var(--primary);
+}
+.ff-run-bottom {
+  display: grid;
+  grid-template-columns: minmax(120px, 200px) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.ff-run-count {
+  white-space: nowrap;
+}
+
+/* readiness checklist (project overview) */
+.ff-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ff-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ff-check-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ff-check-ok .ff-check-icon {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.ff-check-warn .ff-check-icon {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.ff-check-bad .ff-check-icon {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.ff-check-title {
+  color: var(--text);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* project profile (project overview) */
+.ff-card-head + h3 {
+  margin-top: 0;
+}
+.ff-profile {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+  margin: 0;
+}
+.ff-profile dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ff-profile dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+}
+.ff-profile .ff-input {
+  width: 100%;
+  height: 28px;
+}
+.ff-profile-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.ff-profile-value .ff-tag {
+  margin-left: 0;
 }
 
 /* ---------- Settings ---------- */
@@ -1456,6 +1736,7 @@ input[type="radio"] {
 
 /* ---------- Run screen ---------- */
 .ff-run {
+  flex: 1;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1466,13 +1747,14 @@ input[type="radio"] {
   justify-content: space-between;
   align-items: flex-end;
   gap: 24px;
-  padding: var(--page-top) var(--page-x) 16px;
+  padding: 16px var(--page-x) 10px;
 }
 .ff-run-title {
   min-width: 0;
 }
 .ff-run-title h1 {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
+  font-size: 22px;
 }
 .ff-run-meta {
   display: flex;
@@ -1499,7 +1781,7 @@ input[type="radio"] {
   font-weight: 500;
 }
 .ff-progress {
-  padding: 0 var(--page-x) 16px;
+  padding: 0 var(--page-x) 10px;
   border-bottom: 1px solid var(--border);
 }
 .ff-progress-track {
@@ -1539,7 +1821,7 @@ input[type="radio"] {
 }
 .ff-legend-total strong {
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
 }
 .ff-legend-item::before {
   content: "";
@@ -1582,25 +1864,85 @@ input[type="radio"] {
 .ff-callout .ff-link {
   margin-right: 12px;
 }
-.ff-run > .ff-callout {
-  margin: 16px var(--page-x) 0;
-}
-.ff-run-body {
-  flex: 1;
-  /* Below this the screen scrolls instead of squeezing the step list and inspector (and its terminals) under the canvas.
-     Nearly a full viewport: the step header and tabs take ~250px before the AI terminal gets any. */
-  min-height: max(600px, 85vh);
-  display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
-  gap: 24px;
-  padding: 16px var(--page-x) 24px;
-}
 .ff-run-header,
-.ff-progress,
-.ff-run > .ff-callout {
+.ff-progress {
   flex-shrink: 0;
 }
+/* Canvas | splitter | panel: the run fits the window and each side scrolls on its own. */
+.ff-run-split {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 12px minmax(380px, var(--panel-w));
+  padding: 12px var(--page-x) 16px;
+}
+.ff-run-split-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ff-splitter {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+}
+.ff-splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+  border-radius: var(--rounded-full);
+  background: transparent;
+  transition: background 0.15s;
+}
+.ff-splitter:hover::after,
+.ff-splitter:focus-visible::after {
+  background: var(--primary);
+}
+.ff-splitter:focus-visible {
+  outline: none;
+}
+@media (max-width: 1100px) {
+  .ff-run-split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 40%) minmax(0, 1fr);
+    gap: 12px;
+  }
+  .ff-run-split-panel {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .ff-splitter {
+    display: none;
+  }
+}
+.ff-panel-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ff-panel-step {
+  width: auto;
+  max-width: 320px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 13px;
+}
+.ff-btn-active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.ff-run-waiting {
+  color: var(--warning);
+  font-weight: 500;
+}
+.ff-run-waiting .ff-link {
+  margin: 0 0 0 4px;
+}
 .ff-run-main {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1610,50 +1952,6 @@ input[type="radio"] {
   border-radius: var(--rounded-lg);
 }
 
-/* step list — one panel; content edge sits 20px in (8 panel + 12 row) */
-.ff-steps {
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  padding: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--rounded-lg);
-}
-.ff-step-all {
-  padding: 8px 12px;
-  border: 0;
-  border-radius: var(--rounded-sm);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-.ff-step-all:hover {
-  background: var(--hover);
-}
-.ff-step-group {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-.ff-step-group h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 12px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.125px;
-  color: var(--muted);
-}
-.ff-step-group-count {
-  font-variant-numeric: tabular-nums;
-  color: var(--muted-soft);
-}
 .ff-lane-dot {
   display: inline-block;
   flex-shrink: 0;
@@ -1661,130 +1959,6 @@ input[type="radio"] {
   height: 8px;
   border-radius: 50%;
 }
-.ff-step-group ol {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.ff-step-group li {
-  position: relative;
-}
-/* connector between consecutive step icons */
-.ff-step-group li:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  left: 22px;
-  top: 34px;
-  bottom: -6px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--border);
-  pointer-events: none;
-}
-.ff-step {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: var(--rounded-sm);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.ff-step:hover {
-  background: var(--hover);
-}
-.ff-step-selected,
-.ff-step-selected:hover {
-  background: var(--primary-soft);
-}
-.ff-step-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--surface-3);
-  color: var(--muted);
-  font-size: 12px;
-}
-.ff-step-success .ff-step-icon {
-  background: var(--success-soft);
-  color: var(--success);
-}
-.ff-step-info .ff-step-icon {
-  background: var(--info-soft);
-  color: var(--info);
-}
-.ff-step-warning .ff-step-icon {
-  background: var(--warning-soft);
-  color: var(--warning);
-}
-.ff-step-danger .ff-step-icon {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.ff-step-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-  padding-top: 1px;
-}
-.ff-step-label {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 6px;
-  font-weight: 500;
-  line-height: 20px;
-}
-.ff-step-label .ff-tag {
-  height: 18px;
-  margin-left: 0;
-  padding: 0 5px;
-  font-size: 11px;
-  line-height: 18px;
-}
-.ff-step-note {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-.ff-step-info .ff-step-note {
-  color: var(--info);
-}
-.ff-step-warning .ff-step-note {
-  color: var(--warning);
-}
-.ff-step-danger .ff-step-note {
-  color: var(--danger);
-}
-.ff-step-time {
-  flex-shrink: 0;
-  padding-top: 2px;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--muted-soft);
-  font-variant-numeric: tabular-nums;
-}
-.ff-step-you {
-  color: var(--warning);
-  font-weight: 600;
-}
-
 /* tabs — underline, text edge aligned with the panel gutter */
 .ff-tabs {
   display: flex;
@@ -1848,83 +2022,6 @@ input[type="radio"] {
   padding: 32px var(--panel-x);
   text-align: center;
 }
-.ff-feed-line {
-  display: grid;
-  grid-template-columns: 64px auto 20px minmax(0, 1fr);
-  gap: 8px;
-  align-items: baseline;
-  padding: 3px var(--panel-x);
-}
-.ff-feed-line:hover {
-  background: var(--hover);
-}
-.ff-detail .ff-feed-line {
-  grid-template-columns: 64px 20px minmax(0, 1fr);
-}
-.ff-feed-time {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted-soft);
-  font-variant-numeric: tabular-nums;
-}
-.ff-feed-step {
-  max-width: 170px;
-  padding: 0 6px;
-  overflow: hidden;
-  border-radius: var(--rounded-xs);
-  background: var(--hover);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ff-feed-icon {
-  text-align: center;
-}
-.ff-feed-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.ff-feed-success .ff-feed-text {
-  color: var(--success);
-  font-weight: 500;
-}
-.ff-feed-info .ff-feed-text {
-  color: var(--info);
-}
-.ff-feed-warning .ff-feed-text {
-  color: var(--warning);
-}
-.ff-feed-danger .ff-feed-text {
-  color: var(--danger);
-  font-weight: 500;
-}
-.ff-feed-ai .ff-feed-text {
-  color: var(--ai);
-}
-.ff-feed-muted .ff-feed-text {
-  color: var(--muted);
-}
-/* command output lines up under the step chip (all activity) or the text (step detail) */
-.ff-feed-output {
-  margin: 4px var(--panel-x) 8px calc(var(--panel-x) + 72px);
-  padding: 8px 12px;
-  max-height: 320px;
-  overflow: auto;
-  border-radius: var(--rounded-sm);
-  background: var(--code-bg);
-  color: var(--text-body);
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.ff-detail .ff-feed-output {
-  margin-left: calc(var(--panel-x) + 100px);
-}
-
 /* step detail */
 .ff-detail {
   flex: 1;
@@ -1945,15 +2042,28 @@ input[type="radio"] {
   flex-shrink: 0;
   padding: 16px var(--panel-x) 12px;
 }
+.ff-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
 .ff-detail-title h2 {
-  margin: 0 0 8px;
-  font-size: 22px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
   letter-spacing: -0.25px;
 }
+/* Two lines at most: the whole description is in its tooltip. */
 .ff-detail-desc {
-  margin: 8px 0 0;
+  display: -webkit-box;
+  margin: 6px 0 0;
   max-width: 80ch;
+  overflow: hidden;
   font-size: 13px;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 .ff-detail-body {
   flex: 1;
@@ -1983,7 +2093,7 @@ input[type="radio"] {
   border-radius: var(--rounded-xs);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-align: center;
 }
 .ff-file-created {
@@ -2264,12 +2374,12 @@ input[type="radio"] {
   padding: 8px;
 }
 
-/* workflow canvas (n8n-style) — full width under the progress bar */
+/* workflow canvas (n8n-style) — the left side of the run split */
 .ff-canvas {
-  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 16px var(--page-x) 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
@@ -2290,15 +2400,9 @@ input[type="radio"] {
   flex: 1;
   min-width: 0;
 }
-.ff-canvas-tools {
-  flex-shrink: 0;
-  flex-wrap: nowrap;
-}
 .ff-canvas .ff-graph {
+  flex: 1;
   border-top: 1px solid var(--border);
-}
-.ff-canvas-normal .ff-graph {
-  height: 520px;
 }
 /* Hand-off edges keep the classic look (solid, dashed while idle, animated while active);
    labels, fading and hover make them easier to follow. */
@@ -2406,9 +2510,6 @@ input[type="radio"] {
   color: var(--muted);
   font-size: 11px;
 }
-.ff-canvas-large .ff-graph {
-  height: min(80vh, 900px);
-}
 .ff-graph {
   min-height: 0;
 }
@@ -2462,7 +2563,7 @@ input[type="radio"] {
   background: var(--surface-3);
   color: var(--muted);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .ff-gnode-you {
   position: absolute;
@@ -2473,7 +2574,7 @@ input[type="radio"] {
   background: var(--warning);
   color: #fff;
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 15px;
   text-transform: uppercase;
 }
@@ -2493,7 +2594,7 @@ input[type="radio"] {
   background: var(--surface);
   color: var(--muted);
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 14px;
 }
 .ff-gnode-chip-ai {
@@ -2534,7 +2635,7 @@ input[type="radio"] {
   position: absolute;
   color: var(--success);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
 }
@@ -2694,7 +2795,7 @@ input[type="radio"] {
   background: var(--ai-soft, #ede4fb);
   color: var(--ai, #6940a5);
   font-size: 9px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .ff-key-decision {
   color: var(--muted-soft);
@@ -2795,7 +2896,7 @@ input[type="radio"] {
   color: var(--text);
 }
 .ff-dialog::backdrop {
-  background: rgba(15, 15, 15, 0.4);
+  background: rgba(0, 0, 0, 0.55);
 }
 .ff-dialog h2 {
   font-size: 20px;
@@ -3059,22 +3160,6 @@ input[type="radio"] {
   font-weight: 600;
 }
 
-/* ---------- AI chat ---------- */
-.ff-chat {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ff-chat-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-  padding: 8px var(--panel-x);
-  border-bottom: 1px solid var(--border);
-}
 .ff-seg {
   display: inline-flex;
   gap: 2px;
@@ -3098,119 +3183,9 @@ input[type="radio"] {
 }
 .ff-seg-active,
 .ff-seg-active:hover {
-  background: var(--surface);
-  box-shadow: var(--shadow-1);
+  background: var(--surface-3);
+  box-shadow: var(--edge);
   color: var(--text);
-}
-.ff-chat-body {
-  flex: 1;
-  min-height: 240px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px var(--panel-x);
-  background: var(--surface-2);
-}
-.ff-msg {
-  max-width: 88%;
-  padding: 8px 12px;
-  border-radius: var(--rounded-lg);
-}
-.ff-msg-meta {
-  margin-bottom: 2px;
-  color: var(--muted-soft);
-  font-size: 12px;
-}
-.ff-msg-ai {
-  align-self: flex-start;
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-.ff-msg-ai .ff-markdown {
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.ff-msg-ai .ff-markdown p:last-child {
-  margin-bottom: 0;
-}
-.ff-msg-user {
-  align-self: flex-end;
-  background: var(--primary);
-  color: var(--primary-text);
-}
-.ff-msg-user .ff-msg-meta {
-  color: inherit;
-  opacity: 0.8;
-}
-.ff-msg-text {
-  white-space: pre-wrap;
-}
-.ff-tool {
-  align-self: flex-start;
-  max-width: 88%;
-  border: 1px solid var(--border);
-  border-radius: var(--rounded-md);
-  background: var(--surface);
-  font-size: 13px;
-}
-.ff-tool summary {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-.ff-tool-name {
-  color: var(--ai);
-  font-weight: 600;
-}
-.ff-tool-target {
-  max-width: 520px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ff-tool-failed {
-  border-color: color-mix(in srgb, var(--danger-dot) 45%, transparent);
-}
-.ff-tool-failed .ff-tool-name {
-  color: var(--danger);
-}
-.ff-tool .ff-pre {
-  max-height: 240px;
-  margin: 0 8px 8px;
-}
-.ff-chat-file {
-  padding-left: 8px;
-  color: var(--info);
-  font-size: 12px;
-}
-.ff-chat-status {
-  align-self: center;
-  padding: 2px 12px;
-  border-radius: var(--rounded-full);
-  background: var(--hover);
-  color: var(--muted);
-  font-size: 12px;
-}
-.ff-chat-status-danger {
-  background: var(--danger-soft);
-  color: var(--danger);
-}
-.ff-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 12px var(--panel-x);
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-.ff-composer textarea {
-  flex: 1;
-  min-height: 40px;
-  resize: vertical;
 }
 .ff-session-pane {
   display: flex;
@@ -3457,7 +3432,7 @@ input[type="radio"] {
   border-radius: 50%;
   color: #fff;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
 .ff-acard-who {
@@ -3616,7 +3591,7 @@ input[type="radio"] {
 }
 .ff-wactive {
   color: var(--acc-accent);
-  font-weight: 700;
+  font-weight: 600;
 }
 .ff-wwarn {
   color: var(--sev-warn);
@@ -4004,7 +3979,7 @@ input[type="radio"] {
 }
 
 /* ---------- Usage dashboard ---------- */
-/* Categorical chart palette in fixed slot order (validated light on #fff, dark on #202020). */
+/* Categorical chart palette in fixed slot order (validated light on #fff, dark on #202020; dark neutrals follow the Linear surface ladder). */
 :root {
   --viz-1: #2a78d6;
   --viz-2: #eb6834;
@@ -4028,10 +4003,10 @@ input[type="radio"] {
   --viz-6: #008300;
   --viz-7: #9085e9;
   --viz-8: #e66767;
-  --viz-other: #6f6e69;
-  --viz-none: #45443f;
-  --viz-grid: #2c2c2a;
-  --viz-axis: #45443f;
+  --viz-other: #62666d;
+  --viz-none: #34363c;
+  --viz-grid: #1c1d1f;
+  --viz-axis: #34363c;
 }
 .ff-usage-tiles {
   display: grid;
@@ -4362,4 +4337,828 @@ input[type="radio"] {
   background: var(--primary);
   color: var(--primary-text);
   font-weight: 600;
+}
+
+/* ---------- Workflows: list, picker, editor ---------- */
+.ff-workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ff-workflow-card {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 0;
+}
+.ff-workflow-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.ff-workflow-card p {
+  margin: 4px 0 0;
+}
+.ff-workflow-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.ff-workflow-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+  color: var(--text-body);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ff-workflow-option:hover {
+  background: var(--hover);
+}
+.ff-workflow-option:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.ff-workflow-option strong {
+  color: var(--text);
+}
+.ff-workflow-option-active,
+.ff-workflow-option-active:hover {
+  border-color: var(--primary);
+  background: var(--surface-3);
+}
+.ff-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(440px, 80vw);
+}
+.ff-table-section th {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+/* The editor fills the window: a bar on top, then the canvas with its toolbar and drawer. */
+.ff-wf-screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 560px;
+  padding: 16px var(--page-x) 16px;
+}
+.ff-wf-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ff-wf-bar .ff-back {
+  width: auto;
+  margin: 0 8px 0 0;
+}
+.ff-wf-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.ff-wf-title h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.ff-btn-warn {
+  border-color: var(--warning-dot);
+  color: var(--warning);
+}
+.ff-wf-note {
+  margin: 8px 0 0;
+}
+.ff-wf-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+}
+.ff-wf-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-lg);
+  background: var(--surface);
+}
+.ff-wf-canvas:focus {
+  outline: none;
+}
+.ff-wf-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  max-width: calc(100% - 24px);
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-md);
+  background: var(--surface-2);
+}
+.ff-wf-chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-md);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: grab;
+}
+.ff-wf-chip:hover {
+  background: var(--surface-3);
+}
+.ff-wf-chip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.ff-wf-builtin {
+  width: auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: 13px;
+}
+.ff-wf-toolbar-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 0 4px;
+  background: var(--border-strong);
+}
+.ff-wf-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  left: 120px;
+  z-index: 4;
+  margin: 0;
+  text-align: right;
+  pointer-events: none;
+}
+.ff-wf-edge-bar {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-md);
+  background: var(--surface-2);
+  transform: translateX(-50%);
+}
+.ff-wf-node {
+  cursor: grab;
+}
+.ff-wf-node-warn .ff-gnode-card {
+  border-color: var(--warning-dot);
+}
+.ff-wf-node-badge {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+/* Handles sit on the card's edge and above it, big enough to grab; a link snaps to a step nearby. */
+.ff-wf-node .react-flow__handle {
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--surface);
+  background: var(--muted);
+}
+.ff-wf-node .react-flow__handle:hover,
+.ff-wf-node .react-flow__handle.connectingto {
+  background: var(--primary);
+}
+/* The drawer floats over the canvas, so it is the one place that lifts with a shadow. */
+.ff-wf-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 48%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+.ff-wf-drawer-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px 4px;
+}
+.ff-wf-drawer-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.ff-wf-drawer-sub {
+  margin: 0;
+  padding: 0 16px 8px;
+}
+.ff-wf-drawer .ff-tabs {
+  padding: 0 16px;
+}
+.ff-wf-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.ff-wf-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ff-wf-panel h3 {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.ff-wf-panel p {
+  margin: 0;
+}
+.ff-wf-prompt {
+  height: 100%;
+}
+.ff-wf-prompt-text {
+  flex: 1;
+  min-height: 320px;
+  resize: vertical;
+}
+button.ff-prompt-var {
+  border: 0;
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+button.ff-prompt-var:hover {
+  background: var(--primary-soft);
+}
+.ff-wf-lanes,
+.ff-wf-deps,
+.ff-wf-problems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ff-wf-lanes li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+}
+.ff-wf-lanes .ff-lane-dot {
+  margin-top: 12px;
+}
+.ff-wf-lane-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ff-wf-lane-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ff-wf-deps li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: var(--rounded-sm);
+  background: var(--surface-2);
+}
+.ff-wf-problem {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--surface-2);
+  color: var(--text-body);
+  font: inherit;
+  text-align: left;
+}
+button.ff-wf-problem {
+  cursor: pointer;
+}
+button.ff-wf-problem:hover {
+  background: var(--surface-3);
+}
+
+/* ---------- Prompts screen, project additions ---------- */
+.ff-prompts-bar {
+  margin-bottom: 16px;
+}
+.ff-prompts-editor {
+  margin: 0;
+  padding: 0;
+}
+.ff-additions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ff-addition {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--surface-2);
+}
+.ff-addition-off textarea {
+  opacity: 0.55;
+}
+
+/* ---------- Activity as a conversation (like the Claude Code extension) ---------- */
+.ff-tx {
+  padding: 8px 16px 24px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.ff-tx-more {
+  display: block;
+  margin: 0 auto 8px;
+}
+.ff-tx-time {
+  flex-shrink: 0;
+  color: var(--muted-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+/* A step's activity: a header line with its state, then its thread (no box, as in the extension). */
+.ff-tx-block {
+  margin: 0 0 6px;
+}
+/* The header stays in view while the step's lines scroll by. */
+.ff-tx-block-head {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 10px 4px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--feed-bg);
+}
+.ff-tx-fold {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-xs);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.ff-tx-fold:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.ff-tx-block-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+.ff-tx-block-success .ff-tx-block-icon {
+  color: var(--success);
+}
+.ff-tx-block-info .ff-tx-block-icon {
+  color: var(--info);
+}
+.ff-tx-block-warning .ff-tx-block-icon {
+  color: var(--warning);
+}
+.ff-tx-block-danger .ff-tx-block-icon {
+  color: var(--danger);
+}
+.ff-tx-block-name {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.ff-tx-block-name:hover:not(:disabled) {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.ff-tx-block-name:disabled {
+  cursor: default;
+}
+.ff-tx-block-summary {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The thread: every row's mark sits on one vertical line, as in the Claude Code extension. */
+.ff-tx-thread {
+  padding: 8px 12px 10px 10px;
+  background: linear-gradient(var(--border-strong), var(--border-strong)) no-repeat 15px 14px / 1px calc(100% - 28px);
+}
+.ff-tx-row {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 6px 0;
+}
+.ff-tx-mark {
+  justify-self: center;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 3px var(--feed-bg);
+}
+.ff-tx-mark-text {
+  background: var(--text);
+}
+.ff-tx-mark-ok {
+  background: var(--success-dot);
+}
+.ff-tx-mark-failed {
+  background: var(--danger-dot);
+}
+.ff-tx-mark-running {
+  background: var(--info-dot);
+  animation: ff-pulse 1.2s ease-in-out infinite;
+}
+.ff-tx-mark-note {
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+  background: var(--muted-soft);
+}
+.ff-tx-mark-callout {
+  background: currentColor;
+}
+.ff-tx-msg {
+  margin: 10px 0;
+  color: var(--text);
+}
+/* Messages read as plain text, not as the boxed reports. */
+.ff-tx-md.markdown-body {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.ff-tx-md.markdown-body > :first-child {
+  margin-top: 0;
+}
+.ff-tx-md.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+.ff-tx-user {
+  width: fit-content;
+  max-width: 85%;
+  margin: 12px 0 12px auto;
+  padding: 8px 12px;
+  border-radius: var(--rounded-lg);
+  background: var(--surface-3);
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.ff-tx-tool {
+  margin: 2px 0;
+}
+.ff-tx-tool-main {
+  min-width: 0;
+}
+.ff-tx-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 6px);
+  min-width: 0;
+  margin-left: -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--rounded-sm);
+  background: transparent;
+  color: var(--text-body);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ff-tx-tool-head:hover:not(:disabled) {
+  background: var(--hover);
+}
+.ff-tx-tool-head:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.ff-tx-tool-head:disabled {
+  cursor: default;
+}
+.ff-tx-verb {
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+.ff-tx-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ff-tx-failed {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--rounded-xs);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ff-tx-sub {
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ff-tx-out {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--code-bg);
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* Edits and commands show a few lines, fading out; a click shows them all. */
+.ff-tx-preview {
+  max-height: 8.5em;
+  margin: 6px 0 4px;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-md);
+  background: var(--code-bg);
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+  mask-image: linear-gradient(to bottom, #000 65%, transparent);
+}
+.ff-tx-preview.ff-tx-open {
+  max-height: 420px;
+  overflow: auto;
+  cursor: auto;
+  mask-image: none;
+}
+.ff-tx-io {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px 8px;
+}
+.ff-tx-io pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ff-tx-io-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  line-height: 18px;
+}
+.ff-tx-io-failed {
+  border-color: var(--danger-dot);
+}
+.ff-tx-io-failed pre:last-child {
+  color: var(--danger);
+}
+.ff-tx-stamp {
+  margin: 8px 0 -2px;
+  color: var(--muted-soft);
+  font-size: 11px;
+  text-align: right;
+}
+.ff-tx-add-line,
+.ff-tx-del-line {
+  display: block;
+  margin: 0 -10px;
+  padding: 0 10px;
+}
+.ff-tx-add-line {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.ff-tx-del-line {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.ff-tx-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.ff-tx-todos {
+  margin: 2px 0 4px;
+  padding: 0;
+  list-style: none;
+  color: var(--text-body);
+}
+.ff-tx-todo-completed {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.ff-tx-todo-in_progress {
+  color: var(--text);
+  font-weight: 600;
+}
+/* Routine notes (prompt used, tokens, checkpoint…): small, folded when several. */
+.ff-tx-notes {
+  margin: 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ff-tx-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ff-tx-notes-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.ff-tx-notes-toggle:hover {
+  color: var(--text);
+}
+.ff-tx-notes-list {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+/* Warnings, failures, "needs you": tinted, with a coloured edge. */
+.ff-tx-callout-body {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 4px 10px;
+  border-left: 2px solid currentColor;
+  border-radius: 0 var(--rounded-sm) var(--rounded-sm) 0;
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.ff-tx-callout-body > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ff-tx-callout-warning .ff-tx-callout-body {
+  background: var(--warning-soft);
+}
+.ff-tx-callout-danger .ff-tx-callout-body {
+  background: var(--danger-soft);
+}
+.ff-tx-callout-success .ff-tx-callout-body {
+  background: var(--success-soft);
+}
+.ff-tx-callout-info .ff-tx-callout-body {
+  background: var(--info-soft);
+}
+.ff-tx-note-detail {
+  flex-basis: 100%;
+}
+.ff-tx-note-detail summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+.ff-tx-note-detail .ff-tx-out {
+  margin-top: 4px;
+}
+/* Run-level lines between the step blocks. */
+.ff-tx-run {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ff-feed-neutral,
+.ff-feed-muted {
+  color: var(--muted);
+}
+.ff-feed-info {
+  color: var(--info);
+}
+.ff-feed-success {
+  color: var(--success);
+}
+.ff-feed-warning {
+  color: var(--warning);
+}
+.ff-feed-danger {
+  color: var(--danger);
+}
+.ff-feed-ai {
+  color: var(--ai);
+}
+/* Overview of the whole workflow while the canvas shows part of it at a readable zoom. */
+.ff-minimap {
+  --xy-minimap-background-color: var(--surface-2);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--bg) 55%, transparent);
+  --xy-minimap-mask-stroke-color: var(--primary);
+  --xy-minimap-mask-stroke-width: 2;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--rounded-md);
+}
+.ff-minimap svg {
+  display: block;
+  width: 168px;
+  height: 104px;
+}
+/* In the narrow run panel the step tabs stay on one line and scroll sideways. */
+.ff-run-main .ff-tabs {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ff-run-main .ff-tab {
+  flex-shrink: 0;
+}
+/* In the narrow run panel the terminal bar wraps instead of squeezing its command. */
+.ff-run-main .ff-iterm-bar {
+  flex-wrap: wrap;
 }

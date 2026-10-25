@@ -14,9 +14,10 @@ function readPreference(): ThemePreference {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") return stored;
   } catch {
-    // Storage unavailable: fall back to following the OS.
+    // Storage unavailable: use the default.
   }
-  return "system";
+  // Dark by default: the Linear design system is dark-first.
+  return "dark";
 }
 
 function resolve(pref: ThemePreference): ResolvedTheme {

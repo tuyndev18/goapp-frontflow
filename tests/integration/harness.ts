@@ -110,7 +110,8 @@ export async function createHarness(options: { aiFixture?: string } = {}): Promi
     runFilesDir: (projectId, runId) => join(dir, "projects", projectId, "runs", runId, "files"),
     settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 60_000, agentTimeoutMs: 60_000, fixBudget: 1 }),
   });
-  const definition = loadBuiltinWorkflows(join(REPO_ROOT, "workflows"));
+  const [definition] = loadBuiltinWorkflows(join(REPO_ROOT, "workflows"));
+  if (!definition) throw new Error("no built-in workflow");
   const handlers = createBuiltinHandlers(services);
   const engines: WorkflowEngine[] = [];
   const snap = (fixture: string, type: "ba_markdown" | "api_markdown" | "ops_markdown", file: string) => {

@@ -22,6 +22,15 @@ const MAX_DOC_BYTES = 2 * 1024 * 1024;
 /** Files in one upload into a document step. */
 export const MAX_UPLOAD_FILES = 20;
 const skillName = z.string().trim().min(1).max(64);
+const workflowId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/);
+/** A workflow step id, which is also its prompt's name. */
+const stepName = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/);
+const laneSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/),
+  title: z.string().trim().max(120),
+  subtitle: z.string().max(300).optional(),
+  groups: z.array(z.string().max(64)).max(20).optional(),
+});
 
 export const uploadedDocumentSchema = z.object({
   name: z.string().min(1).max(260),
@@ -46,6 +55,8 @@ export const requestSchemas = {
   "runs:create": z.object({
     projectId: id,
     title: z.string().trim().min(1).max(200),
+    /** The workflow the feature runs; default: the built-in feature delivery workflow. */
+    workflowId: workflowId.optional(),
     /** Claude Code steps run as this saved account (its own config folder) instead of the machine's login. */
     claudeAccountId: id.optional(),
     /** Claude Code `--model`: an alias (fable, opus, sonnet, haiku) or a full model id; default: Claude Code's own. */
@@ -109,9 +120,9 @@ export const requestSchemas = {
   "accounts:command": z.object({ line: z.string().max(500) }),
   /** Usage dashboard: local Claude transcripts of the last `days` days + quota history. */
   "accounts:usage": z.object({ days: z.number().int().min(1).max(30).default(30) }),
-  "terminal:open": z.object({ sessionId: id, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
   /** A fresh Claude Code session in the project folder of a feature (run), as the run's Claude account. */
-  "terminal:openFeature": z.object({ runId: id, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
+  /** With `nodeId`: that step's own Claude session again (`claude --resume`), e.g. after the step ended. */
+  "terminal:openFeature": z.object({ runId: id, nodeId: stepName.optional(), cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
   "terminal:snapshot": z.object({ terminalId: id }),
   "terminal:write": z.object({ terminalId: id, data: z.string().max(65_536) }),
   "terminal:resize": z.object({ terminalId: id, cols: z.number().int().min(20).max(400), rows: z.number().int().min(5).max(200) }),
@@ -129,12 +140,36 @@ export const requestSchemas = {
   }),
   "skills:delete": z.object({ name: skillName }),
   "skills:import": z.void(),
-  "skills:assign": z.object({ nodeId: id, skills: z.array(skillName).max(50) }),
+  "skills:assign": z.object({ workflowId, nodeId: stepName, skills: z.array(skillName).max(50) }),
   "skills:openFolder": z.object({ name: skillName.optional() }),
-  // Every AI step is an editable prompt (workflows/prompts/<step id>.md); "_system" is the system prompt.
-  "prompts:get": z.object({ name: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/) }),
-  "prompts:save": z.object({ name: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/), text: z.string().max(200_000) }),
-  "prompts:reset": z.object({ name: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/) }),
+  // Every AI step is an editable prompt of its workflow (workflows/prompts/<workflow>/<step id>.md);
+  // "_system" without a workflow is the system prompt.
+  "prompts:get": z.object({ workflowId: workflowId.optional(), name: stepName }),
+  "prompts:save": z.object({ workflowId: workflowId.optional(), name: stepName, text: z.string().max(200_000) }),
+  "prompts:reset": z.object({ workflowId: workflowId.optional(), name: stepName }),
+  // A project's own instructions appended after a step's prompt, in order.
+  "projectPrompts:list": z.object({ projectId: id }),
+  "projectPrompts:save": z.object({
+    projectId: id,
+    workflowId,
+    nodeId: stepName,
+    additions: z.array(z.object({ id: id.optional(), title: z.string().max(200), text: z.string().max(50_000), enabled: z.boolean() })).max(20),
+  }),
+  "workflows:list": z.void(),
+  "workflows:get": z.object({ workflowId }),
+  /** A new workflow: a copy of `fromId` (its prompts and skills too), else one AI prompt step. */
+  "workflows:create": z.object({ name: z.string().trim().min(1).max(120), fromId: workflowId.optional() }),
+  // Nodes are checked field by field by the workflow parser (as a YAML file would be).
+  "workflows:save": z.object({
+    workflow: z.object({
+      id: workflowId,
+      name: z.string().trim().min(1).max(120),
+      description: z.string().max(2000).optional(),
+      lanes: z.array(laneSchema).min(1).max(20),
+      nodes: z.array(z.record(z.string(), z.unknown())).min(1).max(100),
+    }),
+  }),
+  "workflows:delete": z.object({ workflowId }),
   "settings:get": z.void(),
   "settings:update": z.object({
     rawTerminalLogs: z.boolean().optional(),
@@ -169,8 +204,14 @@ export interface CliStatus {
 export interface ProjectSummary extends Project {
   framework?: string;
   packageManager?: string;
-  lastRun?: { id: string; status: string; createdAt: string; title?: string };
-  health: "ok" | "warning" | "unknown";
+  lastRun?: RunSummary;
+  totalRuns: number;
+  /** Runs not finished yet (running, waiting, paused...). */
+  activeRuns: number;
+  /** Unfinished runs with steps waiting for the user's input. */
+  needsYou: { runId: string; title: string; steps: { id: string; label: string }[] }[];
+  /** Newest run activity, else when the project was last opened. */
+  lastActivityAt: string;
 }
 
 export interface GitStatusDto {
@@ -192,6 +233,8 @@ export interface GraphNodeDto {
   mutation?: boolean;
   /** The step runs an AI CLI agent. */
   ai?: boolean;
+  /** Where the user placed it on the canvas, relative to its lane; auto-laid out without it. */
+  position?: { x: number; y: number };
 }
 export interface GraphEdgeDto {
   id: string;
@@ -203,13 +246,31 @@ export interface GraphEdgeDto {
 export interface RunSummary {
   id: string;
   title: string;
+  workflowId: string;
+  /** Name of the run's workflow version. */
+  workflowName: string;
+  /** Its canvas lanes, which `steps` are grouped by. */
+  lanes?: LaneDto[];
   status: WorkflowRun["status"];
   createdAt: string;
   finishedAt?: string;
+  /** Every step of the run's graph in graph order, with its latest status (none = not started). */
+  steps: RunStepDto[];
+  /** Newest step start / finish, else when the run started. */
+  lastActivityAt: string;
+}
+
+export interface RunStepDto {
+  id: string;
+  label: string;
+  group?: string;
+  status?: NodeRun["status"];
 }
 
 /** An AI step's editable prompt. */
 export interface PromptDto {
+  /** Undefined for the system prompt. */
+  workflowId?: string;
   name: string;
   text: string;
   /** The user changed it; `defaultText` is the version shipped with FrontFlow. */
@@ -228,10 +289,77 @@ export interface RunReportDto {
   path: string;
 }
 
+/** An instruction a project adds after a step's prompt. */
+export interface PromptAdditionDto {
+  id: string;
+  title: string;
+  text: string;
+  enabled: boolean;
+}
+
+/** A swimlane of the workflow canvas; nodes join it through their group. */
+export interface LaneDto {
+  id: string;
+  title: string;
+  subtitle?: string;
+  /** Node groups shown in this lane; default: the lane id only. */
+  groups?: string[];
+}
+
+/** A step type workflows can use. */
+export interface NodeTypeDto {
+  type: string;
+  label: string;
+  description: string;
+  kind: "ai" | "manual" | "input" | "system";
+  /** The step has a prompt (sent to the agent, or shown to the person checking). */
+  prompt: boolean;
+  /** Built-in step: at most one per workflow, with this id. */
+  fixedId?: string;
+  /** Steps whose output it reads: they must run before it. */
+  needs?: string[];
+  /** A new node of this type; the editor sets its id (generic types), label and group. */
+  template: WorkflowNodeDto;
+}
+
+export interface WorkflowSummaryDto {
+  id: string;
+  name: string;
+  description?: string;
+  version: number;
+  /** Shipped with FrontFlow: read-only, changed by cloning it. */
+  builtin: boolean;
+  steps: number;
+  updatedAt?: string;
+}
+
+/** A workflow step as the editor changes it: fields it does not edit (retries, config…) are kept as they are. */
+export interface WorkflowNodeDto {
+  id: string;
+  type: string;
+  label: string;
+  group?: string;
+  description?: string;
+  dependencies: string[];
+  [field: string]: unknown;
+}
+
+export interface WorkflowDto extends Omit<WorkflowSummaryDto, "steps"> {
+  lanes: LaneDto[];
+  nodes: WorkflowNodeDto[];
+  /** Steps that need a prompt and have none yet: a feature cannot start this workflow until they do. */
+  missingPrompts: string[];
+}
+
+export interface WorkflowsStateDto {
+  workflows: WorkflowSummaryDto[];
+  nodeTypes: NodeTypeDto[];
+}
+
 export interface RunStateDto {
-  run: WorkflowRun & { title?: string };
+  run: WorkflowRun & { title?: string; workflowName?: string };
   nodeRuns: NodeRun[];
-  graph: { nodes: GraphNodeDto[]; edges: GraphEdgeDto[] };
+  graph: { lanes?: LaneDto[]; nodes: GraphNodeDto[]; edges: GraphEdgeDto[] };
 }
 
 export interface EventDto {
@@ -436,6 +564,8 @@ export interface SkillDto extends SkillSummaryDto {
 }
 /** A workflow step that runs an AI CLI, so skills can be attached to it. */
 export interface SkillNodeDto {
+  workflowId: string;
+  workflowName: string;
   id: string;
   label: string;
   group?: string;
@@ -446,7 +576,7 @@ export interface SkillsStateDto {
   dir: string;
   skills: SkillSummaryDto[];
   nodes: SkillNodeDto[];
-  /** nodeId → skill names. */
+  /** "<workflowId>/<nodeId>" → skill names. */
   assignments: Record<string, string[]>;
 }
 
@@ -499,7 +629,6 @@ export interface IpcResponses {
   "accounts:refresh": void;
   "accounts:command": { ok: boolean; output: string };
   "accounts:usage": UsageReportDto;
-  "terminal:open": { terminalId: string; command: string };
   "terminal:openFeature": { terminalId: string; command: string };
   "terminal:snapshot": { data: string; open: boolean };
   "terminal:write": void;
@@ -519,6 +648,14 @@ export interface IpcResponses {
   "prompts:get": PromptDto;
   "prompts:save": PromptDto;
   "prompts:reset": PromptDto;
+  /** "<workflowId>/<nodeId>" → the project's additions to that step's prompt. */
+  "projectPrompts:list": Record<string, PromptAdditionDto[]>;
+  "projectPrompts:save": PromptAdditionDto[];
+  "workflows:list": WorkflowsStateDto;
+  "workflows:get": WorkflowDto;
+  "workflows:create": WorkflowDto;
+  "workflows:save": WorkflowDto;
+  "workflows:delete": void;
   "settings:get": SettingsDto;
   "settings:update": SettingsDto;
 }

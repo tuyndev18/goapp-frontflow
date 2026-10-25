@@ -4,32 +4,25 @@ import { FitAddon } from "@xterm/addon-fit";
 import { api, errorMessage } from "../api.js";
 import { allowClipboardKeys, writeTerminal } from "../lib/terminalInput.js";
 
-/** A chat message as typed into Claude Code's UI: pasted as one block (newlines kept), then Enter. */
-export function typedMessage(text: string): string {
-  return `\x1b[200~${text}\x1b[201~\r`;
-}
-
 /**
- * The AI CLI's own interactive UI in a PTY (like a tmux pane): the user types
- * and chats directly. With a session it resumes the step's conversation when the CLI supports it;
- * with a run it starts a fresh Claude Code in the feature's project folder.
+ * The AI CLI's own interactive UI in a PTY (like a tmux pane): the user types and chats directly.
+ * It starts a fresh Claude Code in the feature's project folder or, with a step, that step's own
+ * Claude session again.
  */
 export function InteractiveTerminal({
-  sessionId,
   runId,
-  initialInput,
+  nodeId,
   onMinimize,
   onClose,
 }: {
-  sessionId?: string;
-  runId?: string;
-  initialInput?: string;
+  runId: string;
+  /** Reopen this step's Claude session. */
+  nodeId?: string;
   /** Shows a Hide button that only hides the terminal; the CLI keeps running. */
   onMinimize?(): void;
   onClose(): void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const pending = useRef(initialInput);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "danger" | "muted" }>({ text: "Starting…", tone: "muted" });
 
   useEffect(() => {
@@ -51,18 +44,8 @@ export function InteractiveTerminal({
 
     let terminalId: string | undefined;
     let disposed = false;
-    // A message to send once Claude Code's UI is up: when its output has settled for a moment.
-    let settle: ReturnType<typeof setTimeout> | undefined;
     const offData = api.on("terminal:data", (m) => {
-      if (m.terminalId !== terminalId) return;
-      term.write(m.data);
-      if (!pending.current) return;
-      clearTimeout(settle);
-      settle = setTimeout(() => {
-        if (!pending.current || !terminalId) return;
-        void api.invoke("terminal:write", { terminalId, data: typedMessage(pending.current) });
-        pending.current = undefined;
-      }, 1500);
+      if (m.terminalId === terminalId) term.write(m.data);
     });
     const offExit = api.on("terminal:exit", (m) => {
       if (m.terminalId !== terminalId) return;
@@ -85,12 +68,7 @@ export function InteractiveTerminal({
     });
     observer.observe(hostRef.current);
 
-    const opening = runId
-      ? api.invoke("terminal:openFeature", { runId, cols: term.cols, rows: term.rows })
-      : sessionId
-        ? api.invoke("terminal:open", { sessionId, cols: term.cols, rows: term.rows })
-        : Promise.reject(new Error("No AI session to open"));
-    void opening.then(
+    void api.invoke("terminal:openFeature", { runId, ...(nodeId ? { nodeId } : {}), cols: term.cols, rows: term.rows }).then(
       (opened) => {
         if (disposed) {
           void api.invoke("terminal:close", { terminalId: opened.terminalId });
@@ -107,7 +85,6 @@ export function InteractiveTerminal({
 
     return () => {
       disposed = true;
-      clearTimeout(settle);
       if (terminalId) void api.invoke("terminal:close", { terminalId });
       offData();
       offExit();
@@ -116,7 +93,7 @@ export function InteractiveTerminal({
       observer.disconnect();
       term.dispose();
     };
-  }, [sessionId, runId]);
+  }, [runId, nodeId]);
 
   return (
     <div className="ff-iterm">

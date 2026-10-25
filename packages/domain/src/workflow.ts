@@ -56,6 +56,11 @@ export interface NodeRun {
   /** True when the node output relies on assumptions (spec §20.2 "Assumed"). */
   assumed?: boolean;
   blockerSummary?: string;
+  /**
+   * What the handler keeps for its next attempt (e.g. the AI session to resume): it survives
+   * retries, pauses and app restarts, and is dropped when the node is reset to run from scratch.
+   */
+  resumeState?: Record<string, unknown>;
   startedAt?: string;
   finishedAt?: string;
 }

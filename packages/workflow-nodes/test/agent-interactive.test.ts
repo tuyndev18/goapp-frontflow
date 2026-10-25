@@ -10,6 +10,12 @@ import type { NodeServices, TerminalBackend } from "../src/services.js";
 
 const entry = (v: unknown) => `${JSON.stringify(v)}\n`;
 
+/** The Claude session id in an interactive argv, new (`--session-id`) or resumed (`--resume`). */
+function sessionArg(args: string[]): string {
+  const flag = args.includes("--resume") ? "--resume" : "--session-id";
+  return args[args.indexOf(flag) + 1]!;
+}
+
 /** Stands in for the runner's PTY: "Claude" writes a transcript, then (optionally) exits. */
 function fakeTerminals(configDir: string, script: (write: (v: unknown) => void, exit: (code: number) => void) => void) {
   const exitHandlers = new Set<(id: string, code: number | null) => void>();
@@ -19,8 +25,7 @@ function fakeTerminals(configDir: string, script: (write: (v: unknown) => void, 
     claudeConfigDir: configDir,
     async open(input) {
       opened.push(input);
-      const args = input.args ?? [];
-      const sessionId = args[args.indexOf("--session-id") + 1]!;
+      const sessionId = sessionArg(input.args ?? []);
       const dir = path.join(configDir, "projects", claudeProjectSlug(input.cwd));
       mkdirSync(dir, { recursive: true });
       const file = path.join(dir, `${sessionId}.jsonl`);
@@ -45,13 +50,16 @@ function fakeTerminals(configDir: string, script: (write: (v: unknown) => void, 
   return { backend, opened, closed };
 }
 
-function setup(terminals: TerminalBackend) {
+function setup(terminals: TerminalBackend, resumeState?: Record<string, unknown>) {
   const root = mkdtempSync(path.join(tmpdir(), "ff-agent-"));
   const cwd = path.join(root, "project");
   mkdirSync(cwd);
   const emitted: AnyEvent[] = [];
   const logs: Array<{ message: string; data?: unknown }> = [];
+  const saved: Array<Record<string, unknown>> = [];
   const ctx = {
+    ...(resumeState ? { resumeState } : {}),
+    saveResumeState: async (state: Record<string, unknown>) => void saved.push(state),
     runId: "run_1",
     projectId: "p1",
     nodeId: "B1.implement_ui",
@@ -70,7 +78,7 @@ function setup(terminals: TerminalBackend) {
     settings: () => ({ allowArbitraryShell: false, commandTimeoutMs: 1000, agentTimeoutMs: 20_000, fixBudget: 1 }),
     mcpConfigDir: path.join(root, "mcp"),
   } as unknown as NodeServices;
-  return { ctx, services, cwd, emitted, logs };
+  return { ctx, services, cwd, emitted, logs, saved };
 }
 
 describe("interactive Claude steps", () => {
@@ -205,4 +213,68 @@ describe("interactive Claude steps", () => {
     expect(result.resultText).toBe("Report written.");
     expect(logs.some((l) => l.message.includes("waiting for work it left in the background"))).toBe(true);
   }, 30_000);
+
+  it("saves the new Claude session on the node run before Claude starts", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "ff-claude-"));
+    const { backend, opened } = fakeTerminals(configDir, (write, exit) => {
+      write({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "Done." }], stop_reason: "end_turn" } });
+      exit(0);
+    });
+    const { ctx, services, cwd, saved } = setup(backend);
+    let savedAtOpen = -1;
+    const open = backend.open.bind(backend);
+    backend.open = (input) => ((savedAtOpen = saved.length), open(input));
+    await runAgentStep(ctx, services, { projectId: "p1", adapterId: "claude-code", cwd, prompt: "x", readOnly: false });
+    const args = opened[0]!.args!;
+    expect(args).toContain("--session-id");
+    expect(saved).toEqual([{ claudeSessionId: sessionArg(args) }]);
+    expect(savedAtOpen).toBe(1);
+  });
+
+  it("continues the node run's earlier Claude session with --resume and follows only what it adds", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "ff-claude-"));
+    const { backend, opened } = fakeTerminals(configDir, (write, exit) => {
+      write({ type: "user", message: { role: "user", content: "FrontFlow is running this step again …" }, turnOrigin: "human" });
+      write({ type: "assistant", message: { id: "m3", content: [{ type: "text", text: "Report written now." }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } } });
+      exit(0);
+    });
+    const id = "0b6f3c1e-8a3d-4f7e-9c2a-5d1e8f0a7b42";
+    const { ctx, services, cwd, saved, logs } = setup(backend, { claudeSessionId: id });
+    // The earlier attempt: Claude edited a file and ended its turn without the step's output.
+    const dir = path.join(configDir, "projects", claudeProjectSlug(cwd));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, `${id}.jsonl`),
+      entry({ type: "assistant", message: { id: "m1", content: [{ type: "tool_use", id: "t1", name: "Write", input: { file_path: path.join(cwd, "old.ts") } }], stop_reason: "tool_use" } }) +
+        entry({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] }, toolUseResult: { type: "create" } }) +
+        entry({ type: "assistant", message: { id: "m2", content: [{ type: "text", text: "Old answer." }], stop_reason: "end_turn" } }),
+    );
+
+    const result = await runAgentStep(ctx, services, { projectId: "p1", adapterId: "claude-code", cwd, prompt: "x", readOnly: false });
+
+    const args = opened[0]!.args!;
+    expect(args[args.indexOf("--resume") + 1]).toBe(id);
+    expect(args).not.toContain("--session-id");
+    expect(args[0]).toMatch(/^FrontFlow is running this step again/);
+    expect(saved).toEqual([]);
+    expect(result.externalSessionId).toBe(id);
+    expect(result.resultText).toBe("Report written now.");
+    expect(result.filesChanged).toEqual([]);
+    expect(logs.some((l) => l.message.includes("continues this step's earlier session"))).toBe(true);
+  });
+
+  it("starts a kept session id that has no transcript yet instead of resuming it", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "ff-claude-"));
+    const { backend, opened } = fakeTerminals(configDir, (write, exit) => {
+      write({ type: "assistant", message: { id: "m1", content: [{ type: "text", text: "Done." }], stop_reason: "end_turn" } });
+      exit(0);
+    });
+    const id = "5e2a9d7c-1b4f-4c8e-a3d6-7f0b2c9e1a58";
+    const { ctx, services, cwd, saved } = setup(backend, { claudeSessionId: id });
+    await runAgentStep(ctx, services, { projectId: "p1", adapterId: "claude-code", cwd, prompt: "x", readOnly: false });
+    const args = opened[0]!.args!;
+    expect(args[args.indexOf("--session-id") + 1]).toBe(id);
+    expect(args).not.toContain("--resume");
+    expect(saved).toEqual([]);
+  });
 });

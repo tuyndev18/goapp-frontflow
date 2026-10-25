@@ -144,6 +144,34 @@ nodes:
   });
 });
 
+describe("lanes", () => {
+  const yaml = (lanes: string, group = "main") => `id: w\nname: W\nlanes:\n${lanes}\nnodes:\n  - { id: a, type: t, group: ${group} }\n`;
+
+  it("puts each node group in one lane", () => {
+    const def = loadWorkflowYaml(yaml("  - { id: main, title: Main, subtitle: Sub }\n  - { id: tests, title: Tests, groups: [t1, t2] }"));
+    expect(def.lanes).toEqual([
+      { id: "main", title: "Main", subtitle: "Sub" },
+      { id: "tests", title: "Tests", groups: ["t1", "t2"] },
+    ]);
+    expect(loadWorkflowYaml(yaml("  - { id: tests, title: Tests, groups: [t1, t2] }", "t2")).nodes[0]?.group).toBe("t2");
+  });
+
+  it("keeps where a step was placed on the canvas", () => {
+    const def = loadWorkflowYaml("id: w\nname: W\nnodes:\n  - { id: a, type: t, position: { x: 120, y: 40 } }\n  - { id: b, type: t }\n");
+    expect(def.nodes.map((n) => n.position)).toEqual([{ x: 120, y: 40 }, undefined]);
+    expect(toGraph(def).nodes[0]?.position).toEqual({ x: 120, y: 40 });
+    expect(issuesOf(() => loadWorkflowYaml("id: w\nname: W\nnodes:\n  - { id: a, type: t, position: { x: 1 } }\n"))).toEqual(["nodes[0] (a).position: must be { x, y } numbers"]);
+  });
+
+  it("rejects duplicate lanes, shared groups and nodes outside every lane", () => {
+    expect(issuesOf(() => loadWorkflowYaml(yaml("  - { id: main, title: A }\n  - { id: main, title: B }")))).toEqual(['duplicate lane id "main"']);
+    expect(issuesOf(() => loadWorkflowYaml(yaml("  - { id: main, title: A }\n  - { id: x, title: B, groups: [main] }")))).toEqual([
+      'group "main" is in lanes "main" and "x"',
+    ]);
+    expect(issuesOf(() => loadWorkflowYaml(yaml("  - { id: other, title: A }")))).toEqual(['node "a": group "main" is in no lane']);
+  });
+});
+
 describe("composeWorkflows", () => {
   const first = loadWorkflowYaml("id: first\nname: First\nnodes:\n  - { id: first.end, type: t }\n");
   const second = loadWorkflowYaml(
@@ -184,13 +212,16 @@ describe("evaluateCondition", () => {
 });
 
 describe("built-in workflows", () => {
-  it("loads and composes the three workflow files", () => {
-    const def = loadBuiltinWorkflows(WORKFLOWS_DIR);
+  it("loads the 13-step feature delivery workflow with its canvas lanes", () => {
+    const [def, ...others] = loadBuiltinWorkflows(WORKFLOWS_DIR);
+    expect(others).toEqual([]);
+    if (!def) throw new Error("no built-in workflow");
     expect(def.id).toBe("feature-delivery");
-    expect(def.version).toBe(7);
+    expect(def.version).toBe(8);
     expect(def.nodes).toHaveLength(5 + 2 + 6);
     const groups = new Set(def.nodes.map((n) => n.group));
     expect(groups).toEqual(new Set(["B1", "A", "B2", "C1", "C2"]));
+    expect(def.lanes?.map((l) => [l.id, l.groups ?? [l.id]])).toEqual([["B1", ["B1"]], ["A", ["A"]], ["B2", ["B2"]], ["C", ["C1", "C2"]]]);
     for (const node of def.nodes) expect(node.id.startsWith(`${node.group}.`)).toBe(true);
 
     const byId = new Map(def.nodes.map((n) => [n.id, n]));
@@ -218,6 +249,7 @@ describe("built-in workflows", () => {
     expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "C2.ops_guide", "B2.ui_states"]);
 
     const graph = toGraph(def);
+    expect(graph.lanes).toEqual(def.lanes);
     expect(graph.nodes).toHaveLength(def.nodes.length);
     expect(graph.edges.find((e) => e.id === "A.review->B2.api_binding")?.conditional).toBe(false);
     expect(graph.edges.some((e) => (e.source.startsWith("A.") || e.source.startsWith("B")) && e.target.startsWith("C1."))).toBe(false);

@@ -253,7 +253,7 @@ async function withNodeSkills(ctx: NodeExecutionContext, services: NodeServices,
   if (!services.skills) return prompt;
   let skills: Skill[];
   try {
-    skills = await services.skills.forNode(ctx.nodeId);
+    skills = await services.skills.forNode(ctx.workflowId, ctx.nodeId);
   } catch (err) {
     ctx.log("warn", `Could not load the skills of this step: ${err instanceof Error ? err.message : String(err)}`);
     return prompt;
@@ -316,6 +316,24 @@ async function runHeadlessSession(ctx: NodeExecutionContext, agents: AgentBacken
   }
 }
 
+function fileSize(file: string): number {
+  try {
+    return statSync(file).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** `resumeState` key of the node run's Claude session. */
+const CLAUDE_SESSION_KEY = "claudeSessionId";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The Claude Code session a node run kept, to reopen it (`claude --resume <id>`) after the step. */
+export function claudeSessionOf(resumeState: Record<string, unknown> | undefined): string | undefined {
+  const kept = resumeState?.[CLAUDE_SESSION_KEY];
+  return typeof kept === "string" && UUID_RE.test(kept) ? kept : undefined;
+}
+
 const POLL_MS = 400;
 /** After Claude ends its turn, the user has this long to keep chatting before the step completes. */
 const SETTLE_MS = 8000;
@@ -331,9 +349,19 @@ const IDLE_WARN_MS = 10 * 60_000;
  * step's output is not there yet, the session stays open: Claude takes a new turn when that work
  * reports back, and the step goes on until the output is written. There is no time limit: a waiting
  * Claude costs nothing, so a quiet session is only reported and the user decides (answer or cancel).
+ *
+ * A node run keeps one Claude session, like a conversation in the Claude Code IDE extension: its id
+ * is saved on the node run before Claude starts, and a retry, a resumed pause or a run recovered
+ * after an app restart continues it with `--resume` instead of leaving a new session behind each
+ * time. Only running the step again from scratch (a node reset) starts a new one.
  */
 async function runInteractiveSession(ctx: NodeExecutionContext, terminals: TerminalBackend, workDir: string, options: SessionOptions): Promise<SessionOutcome> {
-  const externalSessionId = randomUUID();
+  const kept = ctx.resumeState?.[CLAUDE_SESSION_KEY];
+  const externalSessionId = typeof kept === "string" && UUID_RE.test(kept) ? kept : randomUUID();
+  // No transcript yet (Claude never took the task, or another account's config folder): start it under the same id.
+  let transcript = externalSessionId === kept ? findClaudeTranscript(options.configDir ?? terminals.claudeConfigDir, options.cwd, externalSessionId) : undefined;
+  const resume = transcript !== undefined;
+  if (externalSessionId !== kept) await ctx.saveResumeState({ ...ctx.resumeState, [CLAUDE_SESSION_KEY]: externalSessionId });
   const sessionId = newId("ses");
   const terminalId = newId("term");
   const evCtx = { traceId: ctx.traceId, workflowRunId: ctx.runId, nodeRunId: ctx.nodeRunId, sessionId };
@@ -355,8 +383,11 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
   const settingSources = options.projectSettings ? projectSettingSources(ctx, options.cwd) : "user";
   const args = [
     ...buildClaudeInteractiveArgs({
-      prompt: `Your task is in ${taskFile}. Read the whole file, then carry it out.`,
+      prompt: resume
+        ? `FrontFlow is running this step again in this session: it was interrupted, or ended without the step's output. Your task is in ${taskFile}. Read the whole file again (it may have changed), check what you already did, then finish the task.`
+        : `Your task is in ${taskFile}. Read the whole file, then carry it out.`,
       sessionId: externalSessionId,
+      resume,
       ...(settingSources ? { settingSources } : {}),
       ...(options.model ? { model: options.model } : {}),
       ...(options.effort ? { effort: options.effort } : {}),
@@ -402,8 +433,8 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
   };
   const fail = (code: string, message: string) => finish(createAgentEvent("session.failed", evCtx, { code, message }));
 
-  let transcript: string | undefined;
-  let offset = 0;
+  // A resumed session appends to its transcript: only what comes after this point belongs to this attempt.
+  let offset = transcript ? fileSize(transcript) : 0;
   let partial = Buffer.alloc(0);
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   const stopSettle = () => {
@@ -478,7 +509,13 @@ async function runInteractiveSession(ctx: NodeExecutionContext, terminals: Termi
   try {
     emit(createAgentEvent("session.started", evCtx, { adapterId: "claude-code", cwd: options.cwd, externalSessionId }));
     // The AI terminals view attaches to this terminal; a new folder may first ask to be trusted.
-    ctx.log("info", "Claude runs as an interactive session: watch it and answer its prompts in this step's AI chat tab", { kind: "terminal", terminalId, externalSessionId });
+    ctx.log(
+      "info",
+      resume
+        ? "Claude continues this step's earlier session (same conversation): watch it and answer its prompts in this step's AI chat tab"
+        : "Claude runs as an interactive session: watch it and answer its prompts in this step's AI chat tab",
+      { kind: "terminal", terminalId, externalSessionId },
+    );
     try {
       await terminals.open({ terminalId, adapterId: "claude-code", cwd: options.cwd, cols: 120, rows: 36, args, env: options.env });
     } catch (err) {

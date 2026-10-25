@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { SkillDto, SkillNodeDto, SkillsStateDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { Loading } from "../components/Loading.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { Markdown } from "../components/Markdown.js";
-import { groupColor, groupLabel } from "../lib/groups.js";
+import { groupColor, groupOf } from "../lib/groups.js";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const NEW_SKILL_BODY = `# Skill title
@@ -29,8 +29,9 @@ interface Draft {
 
 const EMPTY_DRAFT: Draft = { name: "", description: "", body: NEW_SKILL_BODY };
 
-function laneOf(node: SkillNodeDto): string {
-  return node.group ?? node.id.split(".")[0] ?? "other";
+/** Assignments are kept per workflow step. */
+function stepOf(node: SkillNodeDto): string {
+  return `${node.workflowId}/${node.id}`;
 }
 
 /**
@@ -38,7 +39,7 @@ function laneOf(node: SkillNodeDto): string {
  * description, then Markdown instructions), the format Claude Code and Codex use; the skills
  * attached to an AI step are added to that step's prompt the next time it runs.
  */
-export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
+export function SkillsScreen({ focusStep }: { focusStep?: string }) {
   const notify = useApp((s) => s.notify);
   const [state, setState] = useState<SkillsStateDto>();
   /** Name of the skill open in the editor; "" = a new, unsaved skill; undefined = nothing open. */
@@ -64,15 +65,15 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
   }, []);
 
   useEffect(() => {
-    if (!focusNodeId || !state) return;
-    document.getElementById(`skills-node-${focusNodeId}`)?.scrollIntoView({ block: "center" });
-  }, [focusNodeId, !state]);
+    if (!focusStep || !state) return;
+    document.getElementById(`skills-node-${focusStep}`)?.scrollIntoView({ block: "center" });
+  }, [focusStep, !state]);
 
   const dirty = selected === "" || (original !== undefined && (draft.name !== original.name || draft.description !== original.description || draft.body !== original.body));
   const usage = useMemo(() => {
     const out = new Map<string, SkillNodeDto[]>();
     for (const node of state?.nodes ?? []) {
-      for (const name of state?.assignments[node.id] ?? []) out.set(name, [...(out.get(name) ?? []), node]);
+      for (const name of state?.assignments[stepOf(node)] ?? []) out.set(name, [...(out.get(name) ?? []), node]);
     }
     return out;
   }, [state]);
@@ -140,9 +141,9 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
     }
   }
 
-  async function assign(nodeId: string, names: string[]) {
+  async function assign(node: SkillNodeDto, names: string[]) {
     try {
-      const assignments = await api.invoke("skills:assign", { nodeId, skills: names });
+      const assignments = await api.invoke("skills:assign", { workflowId: node.workflowId, nodeId: node.id, skills: names });
       setState((s) => (s ? { ...s, assignments } : s));
     } catch (err) {
       notify("error", errorMessage(err));
@@ -208,14 +209,23 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
             </tr>
           </thead>
           <tbody>
-            {state.nodes.map((node) => {
-              const names = state.assignments[node.id] ?? [];
+            {state.nodes.map((node, i) => {
+              const names = state.assignments[stepOf(node)] ?? [];
               const available = state.skills.filter((s) => !names.includes(s.name));
+              const firstOfWorkflow = state.nodes[i - 1]?.workflowId !== node.workflowId;
               return (
-                <tr key={node.id} id={`skills-node-${node.id}`} className={node.id === focusNodeId ? "ff-row-active" : undefined}>
+                <Fragment key={stepOf(node)}>
+                {firstOfWorkflow ? (
+                  <tr className="ff-table-section">
+                    <th scope="colgroup" colSpan={2}>
+                      {node.workflowName}
+                    </th>
+                  </tr>
+                ) : null}
+                <tr id={`skills-node-${stepOf(node)}`} className={stepOf(node) === focusStep ? "ff-row-active" : undefined}>
                   <th scope="row">
                     <span className="ff-skills-step">
-                      <span className="ff-lane-dot" style={{ background: groupColor(laneOf(node)) }} title={groupLabel(laneOf(node))} />
+                      <span className="ff-lane-dot" style={{ background: groupColor(groupOf(node)) }} />
                       <span>
                         <strong>{node.label}</strong>
                         <span className="ff-muted ff-small ff-mono"> {node.id}</span>
@@ -233,7 +243,7 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
                             type="button"
                             className="ff-skill-chip-remove"
                             aria-label={`Remove ${name} from ${node.label}`}
-                            onClick={() => void assign(node.id, names.filter((n) => n !== name))}
+                            onClick={() => void assign(node, names.filter((n) => n !== name))}
                           >
                             ×
                           </button>
@@ -244,7 +254,7 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
                           className="ff-input ff-skills-add"
                           value=""
                           aria-label={`Add a skill to ${node.label}`}
-                          onChange={(e) => e.target.value && void assign(node.id, [...names, e.target.value])}
+                          onChange={(e) => e.target.value && void assign(node, [...names, e.target.value])}
                         >
                           <option value="">+ Add skill</option>
                           {available.map((s) => (
@@ -259,6 +269,7 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
                     </div>
                   </td>
                 </tr>
+                </Fragment>
               );
             })}
           </tbody>
@@ -371,17 +382,18 @@ export function SkillsScreen({ focusNodeId }: { focusNodeId?: string }) {
                 <fieldset className="ff-skill-steps">
                   <legend>Used in steps</legend>
                   {state.nodes.map((node) => {
-                    const names = state.assignments[node.id] ?? [];
+                    const names = state.assignments[stepOf(node)] ?? [];
                     const on = names.includes(original.name);
                     return (
-                      <label key={node.id} className="ff-checkbox">
+                      <label key={stepOf(node)} className="ff-checkbox">
                         <input
                           type="checkbox"
                           checked={on}
-                          onChange={() => void assign(node.id, on ? names.filter((n) => n !== original.name) : [...names, original.name])}
+                          onChange={() => void assign(node, on ? names.filter((n) => n !== original.name) : [...names, original.name])}
                         />
                         <span>
-                          <span className="ff-lane-dot" style={{ background: groupColor(laneOf(node)) }} /> {node.label}
+                          <span className="ff-lane-dot" style={{ background: groupColor(groupOf(node)) }} /> {node.label}
+                          <span className="ff-muted ff-small"> · {node.workflowName}</span>
                         </span>
                       </label>
                     );

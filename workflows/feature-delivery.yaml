@@ -1,0 +1,253 @@
+# Feature delivery — the built-in workflow: the 13 steps of the workflow canvas.
+# FrontFlow is a wrapper that drives AI agents (tmux/terminal sessions) in the opened project
+# folder: no worktree, no branch. The agents read the project themselves, so there is no
+# "analyze project" step. Every AI step is an editable prompt
+# (workflows/prompts/feature-delivery/<step id>.md); each code-changing step is bracketed by
+# hidden git snapshots used for review/rollback. FrontFlow runs no build/typecheck/lint gates: an
+# AI step passes once its agent session ends, and only agent failures (session, timeout) are retried.
+#
+# ① B1 starts the run: the UI is built from Figma first, because the API contract is often not
+#   ready yet.
+# ② A reviews the built UI against the API contract (spec §12). A.api_contract waits for the
+#   contract without blocking B1; reading it only saves the files of the latest upload into the
+#   run folder in the tool's data (api-contract/); an upload may hold several files and a newer one
+#   can be imported at any time. A.review is one editable prompt the agent runs in the project: it
+#   checks whether the contract is enough for the UI code (Figma is not read again) and writes a
+#   short Markdown review (api-review.md). The "wait for update" loop is a single gate: A.review
+#   returns waiting_for_input unless the review's `Đáp ứng: NN%` reaches 92%; importing a newer
+#   contract runs it again, provideInput({ accept: true }) continues with the gaps as assumptions.
+# ③ B2 starts once the contract has been reviewed. B2.check_backend runs provider verification
+#   when the runtime API is reachable; otherwise the feature is contract-only (never reported as
+#   runtime verified, spec §13.6).
+# ④ C1 turns the BA specification into acceptance test cases (spec §5, §14) from the BA only — not
+#   from the API contract, the design or the code — so it runs as soon as the BA is imported. A
+#   missing BA spec does not block implementation: C1.ba_spec waits with the softer run status
+#   test_design_pending (spec §11.1). C1.test_design waits for input unless its conclusion is `Đủ`.
+#   C2.ops_guide (optional, no AI, never waits) takes the feature's test operations guide, e.g. how
+#   to prepare data in the CMS, for the auto-tests only; importing it later runs C2 again. C2
+#   generates the Playwright tests once the UI states are in; then the agent runs them the
+#   project's way, fixes implementation/test-generation gaps and reports (acceptance-tests.md);
+#   FrontFlow runs no test command itself and waits for the user unless the report says `Đạt`.
+#
+# v8: the three workflow files (ui-implementation, fe-readiness, business-validation) are one
+# workflow with its canvas lanes; node ids are unchanged.
+id: feature-delivery
+version: 8
+name: Feature delivery
+description: UI from Figma, review against the API contract when it arrives, API integration, and BA-driven acceptance tests.
+defaults:
+  timeoutMs: 600000
+  retryPolicy:
+    maxAttempts: 1
+    backoff: none
+    retryableErrors: []
+
+lanes:
+  - id: B1
+    title: ① Build UI from Figma
+    subtitle: "No API needed yet: UI with mock data"
+  - id: A
+    title: ② Review against API
+    subtitle: "When the contract arrives: is the UI covered?"
+  - id: B2
+    title: ③ Integrate the API
+    subtitle: Bind API, check backend, then UI states
+  - id: C
+    title: ④ Prove it works
+    subtitle: BA spec → test cases → run them
+    groups: [C1, C2]
+
+nodes:
+  - id: B1.figma_scope
+    type: figma.design
+    label: Select Figma scope
+    group: B1
+    description: Receive the frames pushed from the GoApp Figma plugin's FrontFlow button and snapshot them when you click Run.
+    timeoutMs: 180000
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [FIGMA_UNAVAILABLE, NETWORK_ERROR]
+
+  - id: B1.implement_ui
+    type: ai.implement_ui
+    label: AI implements UI
+    group: B1
+    description: The agent runs the editable prompt to implement the presentational UI from Figma with mock data (no API yet).
+    dependencies: [B1.figma_scope]
+    config:
+      ai: true
+    mutation: true
+    timeoutMs: 0 # AI step: no time limit
+    retryPolicy:
+      maxAttempts: 3
+      backoff: exponential
+      baseDelayMs: 5000
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: B2.api_binding
+    type: ai.api_integration
+    label: AI binds API
+    group: B2
+    description: API client (existing pattern first) and query/mutation bindings for every mapped interaction of the built UI, with consumer contract tests.
+    dependencies: [A.review, B1.implement_ui]
+    config:
+      ai: true
+    mutation: true
+    timeoutMs: 0 # AI step: no time limit
+    retryPolicy:
+      maxAttempts: 3
+      backoff: exponential
+      baseDelayMs: 5000
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: B2.check_backend
+    type: integration.check_backend
+    label: Check backend
+    group: B2
+    description: Provider verification when the backend is reachable, otherwise contract-only.
+    dependencies: [B2.api_binding]
+    timeoutMs: 600000
+    retryPolicy:
+      maxAttempts: 2
+      backoff: linear
+      baseDelayMs: 5000
+      retryableErrors: [NETWORK_ERROR, COMMAND_FAILED]
+
+  - id: B2.ui_states
+    type: ai.bind_ui_states
+    label: AI adds UI states
+    group: B2
+    description: Loading, empty, error, disabled and permission states wired to real request state, with component and integration tests.
+    dependencies: [B2.check_backend]
+    config:
+      ai: true
+    mutation: true
+    timeoutMs: 0 # AI step: no time limit
+    retryPolicy:
+      maxAttempts: 3
+      backoff: exponential
+      baseDelayMs: 5000
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: A.api_contract
+    type: readiness.read_api
+    label: Read API contract
+    group: A
+    description: Import the API contract (Markdown or OpenAPI, one or more files) whenever it is ready, and again whenever it changes; only the files of the latest upload are saved in the run folder for the agent to read.
+    # Waits for the user to import the contract; not cacheable because it arrives through provideInput.
+    readOnly: false
+    timeoutMs: 120000
+    retryPolicy:
+      maxAttempts: 2
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [IO_ERROR]
+
+  - id: A.review
+    type: readiness.review
+    label: AI reviews UI vs API
+    group: A
+    description: The agent checks whether the API contract is enough to implement the UI built from Figma (editable prompt) and writes a short review of what is missing; below 92% coverage it waits for a newer contract or your decision.
+    dependencies: [A.api_contract, B1.implement_ui]
+    # Not cacheable: the user may accept gaps through provideInput.
+    readOnly: false
+    timeoutMs: 0 # AI step: no time limit
+    config:
+      ai: true
+      aiAttempts: 2
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: C1.ba_spec
+    type: tests.read_ba
+    label: Read BA specification
+    group: C1
+    description: Import the BA specification (Markdown, one or more files), and again whenever it changes (only the latest upload is read); the agent (editable prompt) lists its business scenarios in a short Markdown report.
+    readOnly: false
+    timeoutMs: 0 # AI step: no time limit
+    config:
+      ai: true
+      aiAttempts: 2
+      waitingRunStatus: test_design_pending
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [IO_ERROR, AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: C1.test_design
+    type: tests.design
+    label: Design acceptance tests
+    group: C1
+    description: The agent (editable prompt) writes the acceptance test cases of every business scenario from the BA only, and what cannot be tested yet, as a Markdown report; anything but "enough" waits for a newer BA spec or your decision.
+    dependencies: [C1.ba_spec]
+    # Not cacheable: the user may accept testability gaps through provideInput.
+    readOnly: false
+    timeoutMs: 0 # AI step: no time limit
+    config:
+      ai: true
+      aiAttempts: 2
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: C2.ops_guide
+    type: tests.read_ops_guide
+    label: Read test operations guide
+    group: C2
+    description: Optional. Import the guide the auto-tests follow to prepare test data and preconditions (e.g. in the CMS), and a newer version whenever it changes; without one the step passes.
+    readOnly: false
+    timeoutMs: 120000
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [IO_ERROR]
+
+  - id: C2.generate_tests
+    type: ai.acceptance_tests
+    label: AI generates auto-tests
+    group: C2
+    description: Map the acceptance test cases onto the integrated frontend and write one Playwright E2E test per test case (Playwright is set up when missing; the tests are not run here), preparing test data as the operations guide says.
+    dependencies: [C1.test_design, C2.ops_guide, B2.ui_states]
+    config:
+      ai: true
+    mutation: true
+    timeoutMs: 0 # AI step: no time limit
+    retryPolicy:
+      maxAttempts: 3
+      backoff: exponential
+      baseDelayMs: 5000
+      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: C2.run_tests
+    type: test.acceptance
+    label: Run acceptance tests
+    group: C2
+    description: The agent (editable prompt) runs the feature's Playwright tests the project's way, fixes implementation and test-generation gaps, and reports the result in Markdown; anything but "Đạt" waits for your decision.
+    dependencies: [C2.generate_tests]
+    config:
+      ai: true
+      aiAttempts: 2
+    mutation: true
+    timeoutMs: 0 # AI step: no time limit
+    retryPolicy:
+      maxAttempts: 2
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED]
+
+  - id: C2.evidence_report
+    type: report.evidence
+    label: Evidence report
+    group: C2
+    description: Summarize the run's reports, quality gates, Figma, files changed and evidence in a Markdown report.
+    dependencies: [C2.run_tests]
+    timeoutMs: 120000

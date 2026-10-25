@@ -1,23 +1,19 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { composeWorkflows, loadWorkflowYaml } from "./definition.js";
+import { loadWorkflowYaml } from "./definition.js";
 import type { WorkflowDefinition } from "./types.js";
 
-export const BUILTIN_WORKFLOW_FILES = ["ui-implementation.yaml", "fe-readiness.yaml", "business-validation.yaml"] as const;
+/** The built-in workflow every feature used before workflows could be chosen (the 13-step canvas). */
 export const FEATURE_DELIVERY_WORKFLOW_ID = "feature-delivery";
 
 export function loadWorkflowFile(path: string): WorkflowDefinition {
   return loadWorkflowYaml(readFileSync(path, "utf8"), path);
 }
 
-/** Loads the built-in A/B/C workflow files from `dir` and composes them into one run graph. */
-export function loadBuiltinWorkflows(dir: string): WorkflowDefinition {
-  const parts = BUILTIN_WORKFLOW_FILES.map((file) => loadWorkflowFile(join(dir, file)));
-  return composeWorkflows(FEATURE_DELIVERY_WORKFLOW_ID, "Feature delivery (UI → API review → integration ∥ BA tests)", parts, {
-    // v5: no project-analysis step; the API review compares the contract with the built UI; every AI step is an editable prompt.
-    // v6: no implementation gates (B2.quality_gates removed; AI steps run no build/typecheck/lint).
-    // v7: test design reads the BA only; optional C2.ops_guide (test operations guide, e.g. how to prepare data in the CMS) feeds the auto-tests.
-    version: 7,
-    description: "UI from Figma, review against the API contract when it arrives, API integration, and BA-driven acceptance tests composed into one run graph.",
-  });
+/** Loads the built-in workflows (`*.yaml` in `dir`), feature delivery first. */
+export function loadBuiltinWorkflows(dir: string): WorkflowDefinition[] {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".yaml"))
+    .map((f) => loadWorkflowFile(join(dir, f)))
+    .sort((a, b) => Number(b.id === FEATURE_DELIVERY_WORKFLOW_ID) - Number(a.id === FEATURE_DELIVERY_WORKFLOW_ID) || a.name.localeCompare(b.name));
 }

@@ -2,7 +2,7 @@ import type { RetryPolicy } from "@frontflow/domain";
 import { stableStringify } from "@frontflow/domain";
 import { parse as parseYaml } from "yaml";
 import { WorkflowDefinitionError } from "./errors.js";
-import type { JoinMode, NodeCondition, WorkflowDefinition, WorkflowNodeSpec } from "./types.js";
+import type { JoinMode, NodeCondition, WorkflowDefinition, WorkflowLane, WorkflowNodeSpec } from "./types.js";
 
 export const DEFAULT_RETRY_POLICY: RetryPolicy = { maxAttempts: 1, backoff: "none", retryableErrors: [], baseDelayMs: 1000 };
 export const DEFAULT_NODE_TIMEOUT_MS = 10 * 60 * 1000;
@@ -11,7 +11,8 @@ export const MAX_ATTEMPTS_LIMIT = 20;
 
 const BACKOFFS = ["none", "linear", "exponential"] as const;
 const JOIN_MODES: readonly JoinMode[] = ["all", "any"];
-const TOP_LEVEL_KEYS = new Set(["id", "version", "name", "description", "requires", "timeoutMs", "defaults", "nodes"]);
+const TOP_LEVEL_KEYS = new Set(["id", "version", "name", "description", "requires", "timeoutMs", "defaults", "lanes", "nodes"]);
+const LANE_KEYS = new Set(["id", "title", "subtitle", "groups"]);
 const DEFAULT_KEYS = new Set(["retryPolicy", "timeoutMs", "group"]);
 const NODE_KEYS = new Set([
   "id",
@@ -29,6 +30,7 @@ const NODE_KEYS = new Set([
   "requiresCapabilities",
   "config",
   "version",
+  "position",
 ]);
 const RETRY_KEYS = new Set(["maxAttempts", "backoff", "retryableErrors", "baseDelayMs"]);
 const CONDITION_KEYS = new Set(["node", "path", "equals", "notEquals", "in", "exists"]);
@@ -143,6 +145,32 @@ export function parseWorkflowDefinition(raw: unknown, source = "workflow"): Work
     if (typeof raw.timeoutMs === "number") definition.timeoutMs = raw.timeoutMs;
     else issues.push("timeoutMs: must be a number");
   }
+  if (raw.lanes !== undefined) {
+    if (!Array.isArray(raw.lanes)) issues.push("lanes: must be a list");
+    else {
+      definition.lanes = [];
+      raw.lanes.forEach((rawLane, index) => {
+        const where = `lanes[${index}]`;
+        if (!isRecord(rawLane)) {
+          issues.push(`${where}: must be an object`);
+          return;
+        }
+        checkKeys(rawLane, LANE_KEYS, where, issues);
+        if (typeof rawLane.id !== "string" || !rawLane.id) issues.push(`${where}.id: required string`);
+        if (typeof rawLane.title !== "string") issues.push(`${where}.title: required string`);
+        const lane: WorkflowLane = { id: typeof rawLane.id === "string" ? rawLane.id : "", title: typeof rawLane.title === "string" ? rawLane.title : "" };
+        if (rawLane.subtitle !== undefined) {
+          if (typeof rawLane.subtitle === "string") lane.subtitle = rawLane.subtitle;
+          else issues.push(`${where}.subtitle: must be a string`);
+        }
+        if (rawLane.groups !== undefined) {
+          if (isStringArray(rawLane.groups)) lane.groups = [...rawLane.groups];
+          else issues.push(`${where}.groups: must be a list of strings`);
+        }
+        definition.lanes?.push(lane);
+      });
+    }
+  }
 
   if (!Array.isArray(raw.nodes)) {
     issues.push("nodes: required list");
@@ -200,6 +228,11 @@ export function parseWorkflowDefinition(raw: unknown, source = "workflow"): Work
       if (rawNode.config !== undefined) {
         if (isRecord(rawNode.config)) node.config = rawNode.config;
         else issues.push(`${where}.config: must be an object`);
+      }
+      if (rawNode.position !== undefined) {
+        const p = rawNode.position;
+        if (isRecord(p) && Number.isFinite(p.x) && Number.isFinite(p.y) && Object.keys(p).length === 2) node.position = { x: p.x as number, y: p.y as number };
+        else issues.push(`${where}.position: must be { x, y } numbers`);
       }
       definition.nodes.push(node);
     });
@@ -279,6 +312,24 @@ export function validateWorkflowDefinition(definition: WorkflowDefinition, optio
     }
     if (node.joinMode === "any" && node.dependencies.length < 2) {
       issues.push(`${where}: joinMode "any" requires at least two dependencies`);
+    }
+  }
+
+  if (definition.lanes) {
+    const laneIds = new Set<string>();
+    const laneOfGroup = new Map<string, string>();
+    for (const lane of definition.lanes) {
+      if (!lane.id) continue;
+      if (laneIds.has(lane.id)) issues.push(`duplicate lane id "${lane.id}"`);
+      laneIds.add(lane.id);
+      for (const group of lane.groups ?? [lane.id]) {
+        const owner = laneOfGroup.get(group);
+        if (owner !== undefined && owner !== lane.id) issues.push(`group "${group}" is in lanes "${owner}" and "${lane.id}"`);
+        laneOfGroup.set(group, lane.id);
+      }
+    }
+    for (const node of definition.nodes) {
+      if (node.group === undefined || !laneOfGroup.has(node.group)) issues.push(`node "${node.id}": group "${node.group ?? ""}" is in no lane`);
     }
   }
 
@@ -436,13 +487,15 @@ export function evaluateCondition(condition: NodeCondition, output: unknown): bo
 }
 
 export interface WorkflowGraph {
-  nodes: Array<{ id: string; label: string; type: string; group?: string; mutation: boolean; readOnly: boolean }>;
+  lanes?: WorkflowLane[];
+  nodes: Array<{ id: string; label: string; type: string; group?: string; mutation: boolean; readOnly: boolean; position?: { x: number; y: number } }>;
   edges: Array<{ id: string; source: string; target: string; conditional: boolean }>;
 }
 
 /** React Flow friendly projection of a definition. */
 export function toGraph(definition: WorkflowDefinition): WorkflowGraph {
   return {
+    ...(definition.lanes ? { lanes: definition.lanes.map((l) => structuredClone(l)) } : {}),
     nodes: definition.nodes.map((n) => ({
       id: n.id,
       label: n.label,
@@ -450,6 +503,7 @@ export function toGraph(definition: WorkflowDefinition): WorkflowGraph {
       ...(n.group === undefined ? {} : { group: n.group }),
       mutation: n.mutation,
       readOnly: n.readOnly,
+      ...(n.position ? { position: { ...n.position } } : {}),
     })),
     edges: definition.nodes.flatMap((n) =>
       n.dependencies.map((dep) => ({

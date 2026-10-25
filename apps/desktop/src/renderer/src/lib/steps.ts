@@ -28,6 +28,8 @@ const LOOKS: Record<string, StepLook> = {
   "ai.acceptance_tests": { icon: "✍️", does: "Write the test code", handoff: "Test code" },
   "test.acceptance": { icon: "🔬", does: "AI runs, fixes, reports", handoff: "Test report", decision: { pass: "Đạt", otherwise: "fail → you decide" } },
   "report.evidence": { icon: "📊", does: "Traceability & report" },
+  "ai.prompt": { icon: "🤖", does: "AI runs this step's prompt", handoff: "Changes" },
+  "manual.check": { icon: "👤", does: "You check, then continue", handoff: "Checked", input: true },
 };
 
 export function stepLook(type: string): StepLook {

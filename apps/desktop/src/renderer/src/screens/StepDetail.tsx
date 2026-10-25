@@ -8,48 +8,59 @@ import { ActivityFeed } from "../components/ActivityFeed.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { FileActions } from "../components/FileActions.js";
 import { Markdown } from "../components/Markdown.js";
-import { AiChat } from "../components/AiChat.js";
 import { LiveTerminal } from "../components/LiveTerminal.js";
+import { InteractiveTerminal } from "../components/InteractiveTerminal.js";
 import { PromptEditor } from "../components/PromptEditor.js";
-import { formatDuration, interactiveTerminalId, stepDuration, type ActivityLine } from "../lib/activity.js";
-import { groupColor, groupLabel, groupOf } from "../lib/groups.js";
+import { formatDuration, interactiveTerminalId, stepDuration } from "../lib/activity.js";
+import type { TranscriptItem } from "../lib/transcript.js";
+import type { Lane } from "../lib/groups.js";
 import { DocumentHistory, DocumentImportPanel, documentKindOf, FigmaHandoffPanel, type DocumentUpload } from "../components/StepInputs.js";
 
-const TABS = ["Activity", "Prompt", "Result", "Files", "Tests", "Evidence", "AI chat"] as const;
+const TABS = ["Activity", "Prompt", "Result", "Files", "Tests", "Evidence", "Terminal"] as const;
 type Tab = (typeof TABS)[number];
 
 export function StepDetail({
   projectId,
   runId,
   node,
+  lane,
   nodeRun,
-  lines,
+  items,
+  projectRoot,
   now,
-  onBack,
 }: {
   projectId: string;
   runId: string;
   node: GraphNodeDto;
+  lane?: Lane;
   nodeRun?: NodeRun;
-  lines: ActivityLine[];
+  items: TranscriptItem[];
+  projectRoot?: string | undefined;
   now: number;
-  onBack(): void;
 }) {
   const notify = useApp((s) => s.notify);
   const events = useApp((s) => s.runEvents[runId]);
   const runPaused = useApp((s) => s.runStates[runId]?.run.status === "paused");
+  const workflowId = useApp((s) => s.runStates[runId]?.run.workflowId);
   const [tab, setTab] = useState<Tab>("Activity");
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [open, setOpen] = useState<{ record: ArtifactRecord; text?: string; dataUrl?: string }>();
   const [note, setNote] = useState("");
   const [confirmRunAgain, setConfirmRunAgain] = useState(false);
+  /** The step's Claude session reopened in a terminal after the step ended. */
+  const [reopened, setReopened] = useState(false);
 
   const outputReport = (nodeRun?.output as { report?: unknown } | undefined)?.report;
   const report = typeof outputReport === "string" ? outputReport : undefined;
   // The UI vs API review's coverage (Đáp ứng: NN%), which gates it.
   const score = (nodeRun?.output as { score?: unknown } | undefined)?.score;
-  // Steps with a Markdown report (review, BA scenarios, test design, evidence) open on it; others open on the live activity.
-  useEffect(() => setTab(nodeRun?.status === "passed" && report ? "Result" : "Activity"), [node.id]);
+  const isManual = node.type === "manual.check";
+  // Steps with a Markdown report (review, BA scenarios, test design, evidence) open on it, like a
+  // manual check on its checklist; others open on the live activity.
+  useEffect(() => {
+    setTab((nodeRun?.status === "passed" || isManual) && report ? "Result" : "Activity");
+    setReopened(false);
+  }, [node.id]);
   useEffect(() => {
     setOpen(undefined);
     if (!nodeRun) return setArtifacts([]);
@@ -62,12 +73,11 @@ export function StepDetail({
     () => (startedAt ? [artifacts.filter((a) => a.createdAt >= startedAt), artifacts.filter((a) => a.createdAt < startedAt)] : [artifacts, []]),
     [artifacts, startedAt],
   );
-  const sessionId = useMemo(() => events?.find((e) => e.nodeRunId === nodeRun?.id && e.sessionId)?.sessionId, [events, nodeRun?.id]);
   const terminalId = useMemo(() => (nodeRun ? interactiveTerminalId(events ?? [], nodeRun.id) : undefined), [events, nodeRun?.id]);
   const running = nodeRun?.status === "running" || nodeRun?.status === "retrying";
   // An interactive Claude session may be waiting for an answer (trust folder, permissions): bring it up.
   useEffect(() => {
-    if (terminalId && running) setTab("AI chat");
+    if (terminalId && running) setTab("Terminal");
   }, [terminalId]);
   const files = useMemo(() => {
     const out = new Map<string, string>();
@@ -112,31 +122,36 @@ export function StepDetail({
   return (
     <section className="ff-detail" aria-label={`Step ${node.label}`}>
       <header className="ff-detail-header">
-        <button type="button" className="ff-back" onClick={onBack}>
-          ← All activity
-        </button>
         <div className="ff-detail-title">
           <h2>{node.label}</h2>
+          {canRunAgain ? (
+            <button
+              type="button"
+              className="ff-btn ff-btn-small"
+              title={`Runs this step again${node.ai ? " with its current prompt" : ""}; the steps after it run again too.`}
+              onClick={() => setConfirmRunAgain(true)}
+            >
+              ↻ Run again
+            </button>
+          ) : null}
         </div>
         <div className="ff-run-meta">
           <StatusBadge spec={spec} {...(nodeRun && nodeRun.attempt > 1 ? { suffix: `attempt ${nodeRun.attempt}` } : {})} />
           {nodeRun?.assumed ? <AssumedBadge /> : null}
-          <span className="ff-meta-item">
-            <span className="ff-lane-dot" style={{ background: groupColor(groupOf(node)) }} /> {groupLabel(groupOf(node))}
-          </span>
+          {lane ? (
+            <span className="ff-meta-item">
+              <span className="ff-lane-dot" style={{ background: lane.color }} /> {lane.title}
+            </span>
+          ) : null}
           {duration !== undefined ? <span className="ff-meta-item">⏱ {formatDuration(duration)}</span> : null}
-          <span className="ff-meta-item">{node.ai ? "🤖 AI CLI agent" : "⚙ Automatic, no AI"}</span>
+          <span className="ff-meta-item">{node.ai ? "🤖 AI CLI agent" : isManual ? "👤 Manual check" : "⚙ Automatic, no AI"}</span>
         </div>
-        {node.description ? <p className="ff-muted ff-detail-desc">{node.description}</p> : null}
-        {node.ai ? <StepSkills nodeId={node.id} /> : null}
-        {canRunAgain ? (
-          <div className="ff-actions">
-            <button type="button" className="ff-btn" onClick={() => setConfirmRunAgain(true)}>
-              ↻ Run again
-            </button>
-            <span className="ff-muted ff-small">Runs this step again{node.ai ? " with its current prompt" : ""}; the steps after it run again too.</span>
-          </div>
+        {node.description ? (
+          <p className="ff-muted ff-detail-desc" title={node.description}>
+            {node.description}
+          </p>
         ) : null}
+        {node.ai && workflowId ? <StepSkills workflowId={workflowId} nodeId={node.id} /> : null}
       </header>
       <ConfirmDialog
         open={confirmRunAgain}
@@ -182,7 +197,7 @@ export function StepDetail({
             <div className="ff-actions">
               <input className="ff-input ff-grow" placeholder="Optional note" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
               <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: note ? { note } : {} }))}>
-                Continue
+                {isManual ? "✓ Checked — continue" : "Continue"}
               </button>
             </div>
           )}
@@ -209,7 +224,7 @@ export function StepDetail({
       ) : null}
 
       <div className="ff-tabs ff-tabs-flush" role="tablist">
-        {TABS.filter((t) => t !== "Prompt" || node.ai).map((t) => (
+        {TABS.filter((t) => (t !== "Prompt" || node.ai || isManual) && (t !== "Terminal" || node.ai)).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} className={`ff-tab${tab === t ? " ff-tab-active" : ""}`} onClick={() => setTab(t)}>
             {t}
             {t === "Result" && typeof score === "number" ? <span className="ff-count">{score}%</span> : null}
@@ -220,8 +235,8 @@ export function StepDetail({
       </div>
 
       <div className="ff-detail-body">
-        {tab === "Activity" && <ActivityFeed lines={lines} showStep={false} defaultVerbose emptyText={nodeRun ? "No activity yet." : "This step has not started yet."} />}
-        {tab === "Prompt" && node.ai ? <PromptEditor nodeId={node.id} label={node.label} /> : null}
+        {tab === "Activity" && <ActivityFeed items={items} showStep={false} {...(projectRoot ? { projectRoot } : {})} emptyText={nodeRun ? "No activity yet." : "This step has not started yet."} />}
+        {tab === "Prompt" && (node.ai || isManual) && workflowId ? <PromptEditor workflowId={workflowId} nodeId={node.id} nodeType={node.type} label={node.label} projectId={projectId} /> : null}
         {tab === "Result" && <ResultView runId={runId} value={nodeRun?.output} report={report} />}
         {tab === "Files" && (
           <div className="ff-pad">
@@ -279,20 +294,37 @@ export function StepDetail({
             ) : null}
           </div>
         )}
-        {tab === "AI chat" &&
-          (terminalId ? (
+        {/* A step's Claude Code runs in its own terminal (tmux-style pane): that pane is the only way to talk to it. */}
+        {tab === "Terminal" &&
+          (running && terminalId ? (
             <div className="ff-step-session">
               <p className="ff-muted ff-small ff-step-session-hint">
-                {running
-                  ? "Interactive Claude Code session. Click inside and type to answer its questions (trust this folder, permissions) or to keep chatting."
-                  : "Last screen of the interactive Claude Code session."}
+                Interactive Claude Code session. Click inside and type to answer its questions (trust this folder, permissions) or to keep chatting.
               </p>
               <LiveTerminal terminalId={terminalId} />
             </div>
-          ) : sessionId && nodeRun ? (
-            <AiChat runId={runId} nodeRunId={nodeRun.id} />
+          ) : reopened ? (
+            <div className="ff-step-session">
+              <InteractiveTerminal runId={runId} nodeId={node.id} onClose={() => setReopened(false)} />
+            </div>
+          ) : !nodeRun ? (
+            <p className="ff-pad ff-muted">The step&apos;s Claude terminal opens when the step runs.</p>
+          ) : running ? (
+            <p className="ff-pad ff-muted">The step is running in its Claude terminal: see AI terminals in All activity.</p>
           ) : (
-            <p className="ff-pad ff-muted">This step does not use an AI session.</p>
+            // The step's own pane closes with the step; its Claude session stays and can be reopened.
+            <div className="ff-pad ff-stack ff-step-reopen">
+              <p className="ff-muted">
+                The step&apos;s terminal closed when the step ended. Reopen its Claude Code session (<span className="ff-mono">claude --resume</span>) in the project to read
+                the conversation or keep working with it. Changes made there are not checkpointed by FrontFlow.
+              </p>
+              <div className="ff-actions">
+                <button type="button" className="ff-btn ff-btn-primary" onClick={() => setReopened(true)}>
+                  ▶ Open the step&apos;s Claude session
+                </button>
+              </div>
+              {terminalId ? <LiveTerminal terminalId={terminalId} /> : null}
+            </div>
           ))}
         {open && tab !== "Activity" ? (
           <div className="ff-artifact-view">
@@ -316,21 +348,22 @@ export function StepDetail({
 }
 
 /** Skills attached to this AI step (Skills screen); they are added to the step's prompt when it runs. */
-function StepSkills({ nodeId }: { nodeId: string }) {
+function StepSkills({ workflowId, nodeId }: { workflowId: string; nodeId: string }) {
   const navigate = useApp((s) => s.navigate);
   const [names, setNames] = useState<string[]>();
+  const step = `${workflowId}/${nodeId}`;
   useEffect(() => {
     void api.invoke("skills:list").then(
-      (s) => setNames(s.assignments[nodeId] ?? []),
+      (s) => setNames(s.assignments[step] ?? []),
       () => setNames(undefined),
     );
-  }, [nodeId]);
+  }, [step]);
   if (!names) return null;
   return (
     <div className="ff-detail-skills ff-small">
       <span className="ff-muted">Skills:</span>
       {names.length ? names.map((n) => <span key={n} className="ff-tag ff-mono">{n}</span>) : <span className="ff-muted">none</span>}
-      <button type="button" className="ff-link" onClick={() => navigate({ name: "skills", nodeId })}>
+      <button type="button" className="ff-link" onClick={() => navigate({ name: "skills", step })}>
         {names.length ? "Manage" : "Add skills"}
       </button>
     </div>

@@ -81,7 +81,7 @@ export function aiHandlers(services: NodeServices): Record<string, NodeHandler> 
  * evidence. FrontFlow runs no build/typecheck/lint gates after the agent; checking its own
  * work is part of the step's prompt.
  */
-async function mutationStep(
+export async function mutationStep(
   ctx: NodeExecutionContext,
   services: NodeServices,
   input: NodeInput,

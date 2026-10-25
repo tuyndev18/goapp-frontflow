@@ -173,16 +173,16 @@ export class SqliteRunStore implements RunStore {
     this.db
       .prepare(
         `INSERT INTO node_runs (id, workflow_run_id, node_id, node_type, node_version, status, attempt, idempotency_key,
-           input_hash, output_json, error_json, waiting_on_json, assumed, blocker_summary, started_at, finished_at, seq, updated_at)
+           input_hash, output_json, error_json, waiting_on_json, assumed, blocker_summary, resume_state_json, started_at, finished_at, seq, updated_at)
          VALUES (@id, @workflowRunId, @nodeId, @nodeType, @nodeVersion, @status, @attempt, @idempotencyKey,
-           @inputHash, @output, @error, @waitingOn, @assumed, @blockerSummary, @startedAt, @finishedAt,
+           @inputHash, @output, @error, @waitingOn, @assumed, @blockerSummary, @resumeState, @startedAt, @finishedAt,
            (SELECT COALESCE(MAX(seq), 0) + 1 FROM node_runs WHERE workflow_run_id = @workflowRunId), @updatedAt)
          ON CONFLICT(id) DO UPDATE SET node_id = excluded.node_id, node_type = excluded.node_type,
            node_version = excluded.node_version, status = excluded.status, attempt = excluded.attempt,
            idempotency_key = excluded.idempotency_key, input_hash = excluded.input_hash, output_json = excluded.output_json,
            error_json = excluded.error_json, waiting_on_json = excluded.waiting_on_json, assumed = excluded.assumed,
-           blocker_summary = excluded.blocker_summary, started_at = excluded.started_at, finished_at = excluded.finished_at,
-           updated_at = excluded.updated_at`,
+           blocker_summary = excluded.blocker_summary, resume_state_json = excluded.resume_state_json,
+           started_at = excluded.started_at, finished_at = excluded.finished_at, updated_at = excluded.updated_at`,
       )
       .run({
         id: nodeRun.id,
@@ -199,6 +199,7 @@ export class SqliteRunStore implements RunStore {
         waitingOn: toJson(nodeRun.waitingOn),
         assumed: boolToInt(nodeRun.assumed),
         blockerSummary: nullable(nodeRun.blockerSummary),
+        resumeState: toJson(nodeRun.resumeState),
         startedAt: nullable(nodeRun.startedAt),
         finishedAt: nullable(nodeRun.finishedAt),
         updatedAt: nowIso(),
@@ -315,6 +316,7 @@ function toNodeRun(row: SqlRow): NodeRun {
     waitingOn: fromJson<string[]>(row.waiting_on_json),
     assumed: intToBool(row.assumed),
     blockerSummary: str(row.blocker_summary),
+    resumeState: fromJson<Record<string, unknown>>(row.resume_state_json),
     startedAt: str(row.started_at),
     finishedAt: str(row.finished_at),
   });

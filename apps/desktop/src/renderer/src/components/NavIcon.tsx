@@ -10,6 +10,15 @@ const PATHS = {
   ),
   usage: <path d="M2.5 13.5h11M4.5 11V8M8 11V4M11.5 11V6.5" />,
   skills: <path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8l4.2-1.3z" />,
+  workflows: (
+    <>
+      <rect x="1.8" y="2.5" width="4" height="3.5" rx="0.8" />
+      <rect x="10.2" y="2.5" width="4" height="3.5" rx="0.8" />
+      <rect x="6" y="10" width="4" height="3.5" rx="0.8" />
+      <path d="M5.8 4.2h4.4M12.2 6v2H8v2M3.8 6v2H8" />
+    </>
+  ),
+  prompts: <path d="M3 3.5h10a.5.5 0 0 1 .5.5v6.5a.5.5 0 0 1-.5.5H7l-3 2.5V11H3a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM5.5 6.5h5M5.5 8.5h3" />,
   overview: (
     <>
       <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />

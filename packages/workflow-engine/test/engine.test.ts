@@ -727,6 +727,46 @@ describe("WorkflowEngine persistence, idempotency and recovery", () => {
     expect(store.getRun(run.id)?.status).toBe("completed");
   });
 
+  it("keeps a node's resume state across retries and restarts, and drops it when the node is run again", async () => {
+    const store = new InMemoryRunStore();
+    const definition = workflow([spec("ai", { retryPolicy: { maxAttempts: 3, backoff: "none", retryableErrors: ["AGENT_SESSION_FAILED"] } })]);
+    const seen: unknown[] = [];
+    const engine1 = setup(
+      {
+        ai: handler(async (ctx) => {
+          seen.push(ctx.resumeState);
+          if (!ctx.resumeState) {
+            await ctx.saveResumeState({ session: "s1" });
+            throw new NodeError("AGENT_SESSION_FAILED", "Claude exited");
+          }
+          return hang(ctx.signal);
+        }),
+      },
+      { store },
+    ).engine;
+    const run = await engine1.startRun({ projectId: "p", inputs: INPUTS, definition });
+    await waitUntil(() => store.listNodeRuns(run.id)[0]?.attempt === 2);
+    expect(store.listNodeRuns(run.id)[0]?.resumeState).toEqual({ session: "s1" });
+    engine1.shutdown();
+
+    const { engine: engine2 } = setup(
+      {
+        ai: handler((ctx) => {
+          seen.push(ctx.resumeState);
+          return { status: "passed", output: "done" };
+        }),
+      },
+      { store },
+    );
+    engine2.registerDefinition(definition);
+    await engine2.recover();
+    await engine2.waitForRun(run.id);
+    await engine2.retryNode(run.id, "ai");
+    const state = await engine2.waitForRun(run.id);
+    expect(seen).toEqual([undefined, { session: "s1" }, { session: "s1" }, undefined]);
+    expect(nodeOf(state, "ai").resumeState).toBeUndefined();
+  });
+
   it("keeps paused runs paused on recovery and reports missing definitions", async () => {
     const store = new InMemoryRunStore();
     const definition = workflow([spec("a"), spec("b", { dependencies: ["a"] })]);
@@ -756,8 +796,9 @@ describe("WorkflowEngine persistence, idempotency and recovery", () => {
 });
 
 describe("built-in feature-delivery workflow", () => {
-  it("runs the composed A/B/C graph end to end with stub handlers", async () => {
-    const definition = loadBuiltinWorkflows(fileURLToPath(new URL("../../../workflows", import.meta.url)));
+  it("runs the A/B/C graph end to end with stub handlers", async () => {
+    const [definition] = loadBuiltinWorkflows(fileURLToPath(new URL("../../../workflows", import.meta.url)));
+    if (!definition) throw new Error("no built-in workflow");
     const handlers: Record<string, NodeHandler> = {};
     for (const node of definition.nodes) handlers[node.type] = pass({ node: node.id });
     let waitedOnce = false;

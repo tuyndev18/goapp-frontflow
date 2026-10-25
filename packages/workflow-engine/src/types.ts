@@ -37,6 +37,17 @@ export interface WorkflowNodeSpec {
   requiresCapabilities?: string[];
   config?: Record<string, unknown>;
   version: number;
+  /** Where the user placed the step on the canvas, relative to its lane; auto-laid out without it. */
+  position?: { x: number; y: number };
+}
+
+/** A swimlane of the workflow canvas; nodes join it through their `group`. */
+export interface WorkflowLane {
+  id: string;
+  title: string;
+  subtitle?: string;
+  /** Node groups shown in this lane; default: the lane id only. */
+  groups?: string[];
 }
 
 export interface WorkflowDefinition {
@@ -44,6 +55,8 @@ export interface WorkflowDefinition {
   version: number;
   name: string;
   description?: string;
+  /** Canvas swimlanes, top to bottom; every node's group belongs to one of them. */
+  lanes?: WorkflowLane[];
   /** Node ids from other workflow files this definition depends on; resolved by composeWorkflows. */
   requires?: string[];
   /** Optional run-level timeout; exceeding it moves the run to `timed_out`. */
@@ -74,6 +87,8 @@ export interface ArtifactRef {
 export interface NodeExecutionContext {
   runId: string;
   projectId: string;
+  /** The run's workflow: prompts and skills are attached per workflow step. */
+  workflowId: string;
   nodeId: string;
   nodeRunId: string;
   nodeType: string;
@@ -85,6 +100,10 @@ export interface NodeExecutionContext {
   emitArtifact(artifact: ArtifactRef): void;
   /** Forwards an agent/engine event; run/trace/nodeRun ids are filled in by the engine. */
   emit(event: AnyEvent): void;
+  /** What an earlier attempt of this node run kept with `saveResumeState`; undefined after a reset. */
+  resumeState?: Record<string, unknown>;
+  /** Persists `state` on the node run before resolving, so an attempt after an app restart finds it. */
+  saveResumeState(state: Record<string, unknown>): Promise<void>;
 }
 
 export interface NodeFailure {

@@ -95,7 +95,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
 
 const runStatus = (page: Page) => page.locator(".ff-run-header [role=status]").first();
 const step = (page: Page, label: string) =>
-  page.getByRole("navigation", { name: "Workflow steps" }).locator(".ff-step").filter({ has: page.locator(".ff-step-label", { hasText: label }) });
+  page.getByRole("region", { name: "Workflow canvas" }).locator(".react-flow__node-step").filter({ has: page.locator(".ff-gnode-title", { hasText: label }) });
 
 test("feature workflow: create by name, push Figma, import into steps, follow live, restart, delete", async () => {
   let { app, page } = await launch();
@@ -162,31 +162,15 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     await page.getByRole("button", { name: "Reset to default" }).click();
     await expect(promptBox).toHaveValue(/Implement the presentational UI of the feature/);
 
-    // Readable AI conversation, follow-up chat and interactive takeover.
-    await page.getByRole("tab", { name: "AI chat" }).click();
-    const chat = page.getByRole("log", { name: "AI conversation" });
-    await expect(chat).toContainText("Working on prompt #1");
-    await expect(chat).toContainText("Write");
-    await page.getByLabel("Message to the AI").fill("why this layout?");
-    await page.getByRole("button", { name: "Send" }).click();
-    await expect(chat).toContainText(/Working on prompt #\d+: why this layout\?/, { timeout: 30_000 });
-    if (shots) await page.screenshot({ path: join(shots, "6-ai-chat.png") });
-
-    await page.getByRole("tab", { name: /Interactive terminal/ }).click();
-    const screen = page.getByLabel("Interactive AI terminal");
-    await expect(screen).toContainText("Fake CLI interactive", { timeout: 30_000 });
-    await screen.click();
-    await page.keyboard.type("hello there");
-    await page.keyboard.press("Enter");
-    await expect(screen).toContainText("fake: hello there");
-    if (shots) await page.screenshot({ path: join(shots, "7-interactive-terminal.png") });
-    await page.getByRole("button", { name: "Close terminal" }).click();
+    // A step's Claude Code is only reached through its own terminal (tmux-style pane); there is no chat.
+    await page.getByRole("tab", { name: "Terminal" }).click();
+    await expect(page.getByText(/Claude terminal/)).toBeVisible();
 
     await step(page, "Evidence report").click();
     await page.getByRole("tab", { name: /Evidence/ }).click();
     await expect(page.getByRole("button", { name: /evidence-report\.md/ })).toBeVisible();
 
-    // The workflow canvas sits above the run body on every view; each step carries its manual action.
+    // The workflow canvas sits beside the run panel; each step carries its manual action.
     await page.getByRole("button", { name: "All activity", exact: true }).click();
     const canvas = page.getByRole("region", { name: "Workflow canvas" });
     await expect(canvas.locator(".react-flow__node-step")).toHaveCount(13);
@@ -217,7 +201,8 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     await expect(page.getByRole("heading", { name: "sample-app" })).toBeVisible();
     await expect(page.getByText("No runs yet.")).toBeVisible();
 
-    await page.getByRole("button", { name: "🗑 Remove project" }).click();
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: /Remove project/ }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Remove project" }).click();
     await expect(page.getByText("No projects yet.", { exact: false })).toBeVisible();
   } finally {

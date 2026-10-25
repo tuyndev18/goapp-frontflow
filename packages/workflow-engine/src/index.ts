@@ -5,3 +5,4 @@ export * from "./definition.js";
 export * from "./store.js";
 export * from "./engine.js";
 export * from "./builtin.js";
+export * from "./library.js";

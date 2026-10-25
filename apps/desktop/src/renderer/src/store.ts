@@ -10,7 +10,11 @@ export type Screen =
   | { name: "matrix"; projectId: string; runId: string }
   | { name: "accounts" }
   | { name: "usage" }
-  | { name: "skills"; nodeId?: string }
+  /** `step`: "<workflowId>/<nodeId>" to scroll to. */
+  | { name: "skills"; step?: string }
+  | { name: "workflows" }
+  | { name: "workflow"; workflowId: string }
+  | { name: "prompts"; workflowId?: string; nodeId?: string }
   | { name: "settings" };
 
 interface AppState {

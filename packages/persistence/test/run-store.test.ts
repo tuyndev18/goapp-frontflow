@@ -48,6 +48,16 @@ describe("SqliteRunStore", () => {
     expect(db.runStore.getNodeRun("nr_b")).toEqual(b);
   });
 
+  it("keeps a node run's resume state until it is cleared", () => {
+    seedProjectAndRun(db);
+    const kept = nodeRun("nr_a", { status: "running", attempt: 1, resumeState: { claudeSessionId: "0b6f3c1e-8a3d-4f7e-9c2a-5d1e8f0a7b42" } });
+    db.runStore.saveNodeRun(kept);
+    expect(db.runStore.getNodeRun("nr_a")).toEqual(kept);
+    const { resumeState: _dropped, ...reset } = kept;
+    db.runStore.saveNodeRun({ ...reset, status: "pending", attempt: 0 });
+    expect(db.runStore.getNodeRun("nr_a")?.resumeState).toBeUndefined();
+  });
+
   it("returns the latest passed output for an idempotency key", () => {
     seedProjectAndRun(db);
     db.runStore.saveNodeRun(nodeRun("nr_1", { idempotencyKey: "key", status: "passed", output: { v: 1 }, finishedAt: "2026-10-01T10:01:00.000Z" }));

@@ -7,6 +7,7 @@ import {
   nowIso,
   sha256,
   TERMINAL_RUN_STATUSES,
+  type NodeRun,
   type Project,
   type ProjectProfile,
   type WorkflowRun,
@@ -19,14 +20,28 @@ import { deleteSnapshots, preflight } from "@frontflow/git-adapter";
 import { ArtifactStore, openDatabase } from "@frontflow/persistence";
 import { ApprovalBroker, PolicyEngine } from "@frontflow/policy";
 import { analyzeProject, applyOverrides, slugify, type ProfileOverrides } from "@frontflow/project-analyzer";
-import { BUILTIN_WORKFLOW_FILES, loadBuiltinWorkflows, toGraph, WorkflowEngine, type WorkflowDefinition } from "@frontflow/workflow-engine";
 import {
+  FEATURE_DELIVERY_WORKFLOW_ID,
+  toGraph,
+  WorkflowDefinitionError,
+  WorkflowEngine,
+  WorkflowLibrary,
+  type WorkflowDefinition,
+} from "@frontflow/workflow-engine";
+import {
+  checkWorkflowNodes,
+  claudeSessionOf,
   createBuiltinHandlers,
   createPersistentServices,
   createSessionRecorder,
+  newNodeSpec,
+  NODE_TYPES,
+  nodeTypeInfo,
+  ProjectPromptStore,
   SkillLibrary,
   PromptLibrary,
   promptPlaceholders,
+  stepsWithoutPrompt,
   type FeatureRunInputs,
   type GoFigmaService,
   type ImportedApiContract,
@@ -41,8 +56,11 @@ import type {
   FigmaStatusDto,
   ProjectSummary,
   RunStateDto,
+  RunSummary,
   SessionDto,
   SkillNodeDto,
+  WorkflowDto,
+  WorkflowNodeDto,
 } from "../shared/ipc.js";
 import { createAccountsService } from "./accounts.js";
 import { AppError, type IpcHandlers, type PushBus } from "./ipc-gateway.js";
@@ -210,11 +228,20 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
   const skills = new SkillLibrary(skillsDir);
   if (firstLaunch) seedSkills();
 
-  // --- Prompts: every AI step is an editable prompt (shipped defaults + the user's edits) ---
+  // --- Workflows: the built-in ones and the user's own (Workflows screen) ---
   const workflowsDir = findWorkflowsDir();
+  const workflows = new WorkflowLibrary({ builtinDir: workflowsDir, userDir: join(dataDir, "workflows"), check: checkWorkflowNodes });
+  const builtinWorkflow = () => workflows.get(FEATURE_DELIVERY_WORKFLOW_ID).definition;
+
+  // --- Prompts: every AI step is an editable prompt per workflow (shipped defaults + the user's edits),
+  // plus each project's additions appended after it ---
   const prompts = new PromptLibrary({ defaultsDir: join(workflowsDir, "prompts"), userDir: join(dataDir, "prompts") });
-  const promptDto = (name: string) => {
-    const t = prompts.get(name);
+  prompts.migrateLegacyEdits(FEATURE_DELIVERY_WORKFLOW_ID);
+  const projectPrompts = new ProjectPromptStore((projectId) => join(dataDir, "projects", projectId, "prompt-additions.json"));
+  const promptDto = (name: string, workflowId: string | undefined) => {
+    const t = prompts.find(name, workflowId);
+    // A step of a new workflow has no prompt until the user writes one.
+    if (!t) return { ...(workflowId ? { workflowId } : {}), name, text: "", customized: false, defaultText: "", placeholders: [] };
     return { ...t, placeholders: promptPlaceholders(t.defaultText || t.text) };
   };
 
@@ -262,7 +289,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     },
     figma: goFigma,
     skills,
-    prompts,
+    prompts: {
+      get: (name, workflowId) => prompts.get(name, workflowId),
+      additions: (projectId, workflowId, nodeId) => projectPrompts.list(projectId, workflowId, nodeId),
+    },
     policy,
     approvals,
     claudeProfileFor: (accountId) => accounts.claudeProfileFor(accountId),
@@ -288,19 +318,22 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       }
     },
   });
-  const definition = loadDefinition();
   const engine = new WorkflowEngine({
     store: db.runStore,
     handlers: createBuiltinHandlers(nodeServices),
     maxConcurrency: () => settingsStore.get().maxConcurrentNodes,
   });
-  engine.registerDefinition(definition);
-  try {
-    db.workflowDefinitions.save({ id: definition.id, version: definition.version, name: definition.name, definition });
-  } catch (err) {
-    // Same id+version with different content: a workflow YAML changed without a version bump.
-    console.warn("[engine]", err instanceof Error ? err.message : err);
+  /** Makes a workflow version runnable and keeps it, so runs started from it keep their graph after it changes. */
+  function registerWorkflow(definition: WorkflowDefinition): void {
+    engine.registerDefinition(definition);
+    try {
+      db.workflowDefinitions.save({ id: definition.id, version: definition.version, name: definition.name, definition });
+    } catch (err) {
+      // Same id+version with different content: a workflow YAML changed without a version bump.
+      console.warn("[engine]", err instanceof Error ? err.message : err);
+    }
   }
+  for (const entry of workflows.list()) registerWorkflow(entry.definition);
 
   const pendingStatePush = new Set<string>();
   engine.subscribe((event: AnyEvent) => {
@@ -321,23 +354,67 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     }
   });
 
+  /** A run made by an older workflow version keeps its own graph, so its node runs still line up. */
+  function definitionOf(run: WorkflowRun): WorkflowDefinition {
+    return (
+      engine.getDefinition(run.workflowId, run.workflowVersion) ??
+      db.workflowDefinitions.get<WorkflowDefinition>(run.workflowId, run.workflowVersion)?.definition ??
+      currentWorkflow(run.workflowId) ??
+      builtinWorkflow()
+    );
+  }
+
+  function currentWorkflow(workflowId: string): WorkflowDefinition | undefined {
+    try {
+      return workflows.get(workflowId).definition;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function runSummary(run: WorkflowRun): RunSummary {
+    const latest = new Map<string, NodeRun>();
+    for (const nr of db.runStore.listNodeRuns(run.id)) {
+      const prev = latest.get(nr.nodeId);
+      if (!prev || nr.attempt >= prev.attempt) latest.set(nr.nodeId, nr);
+    }
+    const times = [run.startedAt ?? run.createdAt, run.finishedAt, ...[...latest.values()].flatMap((nr) => [nr.startedAt, nr.finishedAt])];
+    const lastActivityAt = times.reduce<string>((max, t) => (t && Date.parse(t) > Date.parse(max) ? t : max), run.createdAt);
+    const def = definitionOf(run);
+    const lanes = def.lanes ?? currentWorkflow(run.workflowId)?.lanes;
+    return {
+      id: run.id,
+      title: typeof run.inputs.title === "string" ? run.inputs.title : run.workflowId,
+      workflowId: run.workflowId,
+      workflowName: def.name,
+      ...(lanes ? { lanes } : {}),
+      status: run.status,
+      createdAt: run.createdAt,
+      ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
+      steps: toGraph(def).nodes.map((n) => {
+        const status = latest.get(n.id)?.status;
+        return { id: n.id, label: n.label, ...(n.group ? { group: n.group } : {}), ...(status ? { status } : {}) };
+      }),
+      lastActivityAt,
+    };
+  }
+
   async function runState(runId: string): Promise<RunStateDto> {
     const state = await engine.getRunState(runId);
     const run = state?.run ?? db.runStore.getRun(runId);
     if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
-    // A run made by an older workflow version keeps its own graph, so its node runs still line up.
-    const def =
-      engine.getDefinition(run.workflowId, run.workflowVersion) ??
-      db.workflowDefinitions.get<WorkflowDefinition>(run.workflowId, run.workflowVersion)?.definition ??
-      definition;
+    const def = definitionOf(run);
     const graph = toGraph(def);
+    // Runs started before workflows had lanes take them from the workflow's current version.
+    const lanes = graph.lanes ?? currentWorkflow(run.workflowId)?.lanes;
     return {
-      run: { ...run, ...(typeof run.inputs.title === "string" ? { title: run.inputs.title } : {}) },
+      run: { ...run, workflowName: def.name, ...(typeof run.inputs.title === "string" ? { title: run.inputs.title } : {}) },
       nodeRuns: state?.nodes ?? db.runStore.listNodeRuns(runId),
       graph: {
+        ...(lanes ? { lanes } : {}),
         nodes: graph.nodes.map((n) => {
           const spec = def.nodes.find((s) => s.id === n.id);
-          return { id: n.id, label: n.label, type: n.type, mutation: n.mutation, ...(n.group ? { group: n.group } : {}), ...(spec?.description ? { description: spec.description } : {}), ...(spec?.config?.["ai"] === true ? { ai: true } : {}) };
+          return { id: n.id, label: n.label, type: n.type, mutation: n.mutation, ...(n.group ? { group: n.group } : {}), ...(spec?.description ? { description: spec.description } : {}), ...(spec?.config?.["ai"] === true ? { ai: true } : {}), ...(n.position ? { position: n.position } : {}) };
         }),
         edges: graph.edges,
       },
@@ -352,13 +429,24 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
 
   function summarize(project: Project): ProjectSummary {
     const profile = db.profiles.getLatest(project.id);
-    const lastRun = db.runStore.listRuns({ projectId: project.id, limit: 1 })[0];
+    const runs = db.runStore.listRuns({ projectId: project.id });
+    // Finished runs only need their step list for the newest one.
+    const active = runs.filter((r) => !TERMINAL_RUN_STATUSES.has(r.status)).map(runSummary);
+    const newest = runs[0];
+    const lastRun = newest && (active.find((r) => r.id === newest.id) ?? runSummary(newest));
+    const lastActivityAt = [lastRun, ...active].reduce<string>((max, r) => (r && Date.parse(r.lastActivityAt) > Date.parse(max) ? r.lastActivityAt : max), project.lastOpenedAt);
     return {
       ...project,
       ...(profile?.framework ? { framework: profile.framework } : {}),
       ...(profile?.packageManager ? { packageManager: profile.packageManager } : {}),
-      ...(lastRun ? { lastRun: { id: lastRun.id, status: lastRun.status, createdAt: lastRun.createdAt, ...(typeof lastRun.inputs.title === "string" ? { title: lastRun.inputs.title } : {}) } } : {}),
-      health: !profile ? "unknown" : profile.commands.build && profile.commands.typecheck ? "ok" : "warning",
+      ...(lastRun ? { lastRun } : {}),
+      totalRuns: runs.length,
+      activeRuns: active.length,
+      needsYou: active.flatMap((r) => {
+        const steps = r.steps.filter((s) => s.status === "waiting_for_input").map((s) => ({ id: s.id, label: s.label }));
+        return steps.length ? [{ runId: r.id, title: r.title, steps }] : [];
+      }),
+      lastActivityAt,
     };
   }
 
@@ -477,6 +565,9 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
 
     "runs:create": async (req) => {
       const project = requireProject(req.projectId);
+      const definition = requireWorkflow(req.workflowId ?? FEATURE_DELIVERY_WORKFLOW_ID).definition;
+      const missing = stepsWithoutPrompt(definition, prompts);
+      if (missing.length) throw new AppError("PROMPT_MISSING", `Write the prompt of ${missing.join(", ")} in workflow "${definition.name}" first`);
       if (!db.profiles.getLatest(project.id)) await analyze(project);
       const pre = await preflight(project.rootPath);
       const inputs: FeatureRunInputs = {
@@ -490,6 +581,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         ...(req.effort ? { effort: req.effort } : {}),
         allowAssumptions: false,
       };
+      registerWorkflow(definition);
       const run = await engine.startRun({ projectId: project.id, definition, inputs });
       return runState(run.id);
     },
@@ -525,14 +617,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       // A waiting step continues with it; a finished one runs again, and so do the steps after it.
       await engine.retryNode(runId, nodeId, imported as unknown as Record<string, unknown>);
     },
-    "runs:list": ({ projectId }) =>
-      db.runStore.listRuns({ projectId, limit: 100 }).map((r: WorkflowRun) => ({
-        id: r.id,
-        title: typeof r.inputs.title === "string" ? r.inputs.title : r.workflowId,
-        status: r.status,
-        createdAt: r.createdAt,
-        ...(r.finishedAt ? { finishedAt: r.finishedAt } : {}),
-      })),
+    "runs:list": ({ projectId }) => db.runStore.listRuns({ projectId, limit: 100 }).map(runSummary),
     "runs:get": ({ runId }) => runState(runId),
     "runs:delete": async ({ runId }) => {
       const run = db.runStore.getRun(runId);
@@ -597,22 +682,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       return size > 256_000 ? text.slice(-256_000) : text;
     },
 
-    "terminal:open": async ({ sessionId, cols, rows }) => {
-      const record = db.aiSessions.get(sessionId);
-      if (!record) throw new AppError("NOT_FOUND", `Unknown session ${sessionId}`);
-      if (!existsSync(record.cwd)) throw new AppError("NOT_FOUND", `Working directory ${record.cwd} no longer exists`);
-      const terminalId = newId("term");
-      const opened = await requireRunner().openTerminal({
-        terminalId,
-        adapterId: record.adapterId,
-        ...(record.externalSessionId ? { externalSessionId: record.externalSessionId } : {}),
-        cwd: record.cwd,
-        cols,
-        rows,
-      });
-      return { terminalId, command: opened.command };
-    },
-    "terminal:openFeature": async ({ runId, cols, rows }) => {
+    "terminal:openFeature": async ({ runId, nodeId, cols, rows }) => {
       const run = db.runStore.getRun(runId);
       if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
       const project = requireProject(run.projectId);
@@ -620,6 +690,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       // Same Claude account as the run's AI steps, so its usage and login match theirs.
       const accountId = typeof run.inputs.claudeAccountId === "string" ? run.inputs.claudeAccountId : undefined;
       const configDir = accountId ? await accounts.claudeProfileFor(accountId) : undefined;
+      // A step's own session: the one its latest attempt kept (the step's terminal closes when it ends).
+      const stepRun = nodeId ? db.runStore.listNodeRuns(runId).filter((n) => n.nodeId === nodeId).sort((x, y) => x.attempt - y.attempt).at(-1) : undefined;
+      if (nodeId && !stepRun) throw new AppError("NOT_FOUND", `Step ${nodeId} has not run yet`);
+      const session = claudeSessionOf(stepRun?.resumeState);
       const terminalId = newId("term");
       const opened = await requireRunner().openTerminal({
         terminalId,
@@ -627,6 +701,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         cwd: project.rootPath,
         cols,
         rows,
+        ...(session ? { externalSessionId: session } : {}),
         ...(configDir ? { env: { CLAUDE_CONFIG_DIR: configDir } } : {}),
       });
       return { terminalId, command: opened.command };
@@ -663,9 +738,9 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       if (!imported.imported.length && !imported.skipped.length) throw new AppError("NO_SKILLS", `No SKILL.md found in ${source}`);
       return imported;
     },
-    "skills:assign": ({ nodeId, skills: names }) => {
-      if (!skillNodes().some((n) => n.id === nodeId)) throw new AppError("NOT_FOUND", `${nodeId} is not an AI step`);
-      return skills.setNodeSkills(nodeId, names);
+    "skills:assign": ({ workflowId, nodeId, skills: names }) => {
+      if (!skillNodes().some((n) => n.workflowId === workflowId && n.id === nodeId)) throw new AppError("NOT_FOUND", `${nodeId} is not an AI step of ${workflowId}`);
+      return skills.setNodeSkills(workflowId, nodeId, names);
     },
     "skills:openFolder": async ({ name }) => {
       const dir = name ? skills.get(name)?.dir : skillsDir;
@@ -675,15 +750,76 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       if (error) throw new AppError("OPEN_FAILED", error);
     },
 
-    "prompts:get": ({ name }) => promptDto(name),
-    "prompts:save": ({ name, text }) => {
-      if (!text.trim()) throw new AppError("EMPTY_PROMPT", "A prompt cannot be empty; reset it to the default instead");
-      prompts.save(name, text);
-      return promptDto(name);
+    "prompts:get": ({ workflowId, name }) => {
+      if (workflowId) requireWorkflow(workflowId);
+      return promptDto(name, workflowId);
     },
-    "prompts:reset": ({ name }) => {
-      prompts.reset(name);
-      return promptDto(name);
+    "prompts:save": ({ workflowId, name, text }) => {
+      if (!text.trim()) throw new AppError("EMPTY_PROMPT", "A prompt cannot be empty; reset it to the default instead");
+      // The step may not be saved in its workflow yet (written in the editor first).
+      if (workflowId) requireWorkflow(workflowId);
+      prompts.save(name, workflowId, text);
+      return promptDto(name, workflowId);
+    },
+    "prompts:reset": ({ workflowId, name }) => {
+      prompts.reset(name, workflowId);
+      return promptDto(name, workflowId);
+    },
+
+    "projectPrompts:list": ({ projectId }) => projectPrompts.all(requireProject(projectId).id),
+    "projectPrompts:save": ({ projectId, workflowId, nodeId, additions }) => {
+      requireProject(projectId);
+      requireWorkflow(workflowId);
+      if (additions.some((a) => !a.text.trim())) throw new AppError("EMPTY_PROMPT", "An addition cannot be empty; remove it instead");
+      return projectPrompts.set(projectId, workflowId, nodeId, additions);
+    },
+
+    "workflows:list": () => {
+      const builtin = builtinWorkflow();
+      return {
+        workflows: workflows.list().map(({ definition: d, builtin: isBuiltin, updatedAt }) => ({
+          id: d.id,
+          name: d.name,
+          ...(d.description ? { description: d.description } : {}),
+          version: d.version,
+          builtin: isBuiltin,
+          steps: d.nodes.length,
+          ...(updatedAt ? { updatedAt } : {}),
+        })),
+        nodeTypes: NODE_TYPES.map((t) => ({
+          ...t,
+          ...(t.needs ? { needs: [...t.needs] } : {}),
+          template: newNodeSpec(t.type, { id: t.fixedId ?? "", group: "" }, builtin) as WorkflowNodeDto,
+        })),
+      };
+    },
+    "workflows:get": ({ workflowId }) => workflowDto(workflowId),
+    "workflows:create": ({ name, fromId }) => {
+      const id = workflows.newId(name);
+      if (fromId) {
+        const source = requireWorkflow(fromId).definition;
+        saveWorkflow({ ...workflowData(source), id, name });
+        prompts.copyWorkflow(fromId, id, source.nodes.map((n) => n.id));
+        skills.copyWorkflow(fromId, id);
+      } else {
+        const step = newNodeSpec("ai.prompt", { id: "implement", label: "Implement", group: "main" }, builtinWorkflow());
+        saveWorkflow({ id, name, lanes: [{ id: "main", title: "Main" }], nodes: [step] });
+        prompts.save("implement", id, 'Implement the feature "{{feature}}" in this project.\n');
+      }
+      return workflowDto(id);
+    },
+    "workflows:save": ({ workflow }) => {
+      requireWorkflow(workflow.id);
+      saveWorkflow({ ...workflow, ...(workflow.description?.trim() ? { description: workflow.description.trim() } : { description: undefined }) });
+      return workflowDto(workflow.id);
+    },
+    "workflows:delete": ({ workflowId }) => {
+      requireWorkflow(workflowId);
+      const active = db.runStore.listActiveRuns().filter((r) => r.workflowId === workflowId);
+      if (active.length) throw new AppError("WORKFLOW_IN_USE", `${active.length} unfinished feature run(s) use this workflow; finish or delete them first`);
+      workflows.remove(workflowId);
+      prompts.forgetWorkflow(workflowId);
+      skills.forgetWorkflow(workflowId);
     },
 
     ...accounts.handlers,
@@ -740,15 +876,57 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     return db.projects.get(base) ? `${base}-${sha256(rootPath).slice(0, 6)}` : base;
   }
 
-  /** Steps that run an AI CLI agent, in workflow order: the ones skills can be attached to. */
+  /** Steps that run an AI CLI agent, per workflow in workflow order: the ones skills can be attached to. */
   function skillNodes(): SkillNodeDto[] {
-    const graph = toGraph(definition);
-    return definition.nodes
-      .filter((n) => n.config?.["ai"] === true)
-      .map((n) => {
-        const group = graph.nodes.find((g) => g.id === n.id)?.group;
-        return { id: n.id, label: n.label, ...(group ? { group } : {}), ...(n.description ? { description: n.description } : {}) };
-      });
+    return workflows.list().flatMap(({ definition: d }) =>
+      d.nodes
+        .filter((n) => nodeTypeInfo(n.type)?.kind === "ai")
+        .map((n) => ({
+          workflowId: d.id,
+          workflowName: d.name,
+          id: n.id,
+          label: n.label,
+          ...(n.group ? { group: n.group } : {}),
+          ...(n.description ? { description: n.description } : {}),
+        })),
+    );
+  }
+
+  function requireWorkflow(workflowId: string) {
+    try {
+      return workflows.get(workflowId);
+    } catch {
+      throw new AppError("NOT_FOUND", `Unknown workflow ${workflowId}`);
+    }
+  }
+
+  /** A workflow as workflow data (what the editor and the YAML file hold). */
+  function workflowData(d: WorkflowDefinition) {
+    return {
+      id: d.id,
+      name: d.name,
+      ...(d.description ? { description: d.description } : {}),
+      // Workflows made before lanes existed get one lane per node group.
+      lanes: d.lanes ?? [...new Set(d.nodes.map((n) => n.group ?? "main"))].map((g) => ({ id: g, title: g })),
+      nodes: d.nodes.map((n) => structuredClone({ ...n, group: n.group ?? "main" }) as WorkflowNodeDto),
+    };
+  }
+
+  function workflowDto(workflowId: string): WorkflowDto {
+    const { definition: d, builtin, updatedAt } = requireWorkflow(workflowId);
+    return { ...workflowData(d), version: d.version, builtin, ...(updatedAt ? { updatedAt } : {}), missingPrompts: stepsWithoutPrompt(d, prompts) };
+  }
+
+  function saveWorkflow(raw: Record<string, unknown>): WorkflowDefinition {
+    let definition: WorkflowDefinition;
+    try {
+      definition = workflows.save(raw);
+    } catch (err) {
+      if (err instanceof WorkflowDefinitionError) throw new AppError("INVALID_WORKFLOW", err.issues.join("; "));
+      throw err;
+    }
+    registerWorkflow(definition);
+    return definition;
   }
 
   /** First launch: the skills shipped next to the workflows (repo `skill/`) start the library. */
@@ -770,10 +948,6 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     }
   }
 
-  function loadDefinition(): WorkflowDefinition {
-    return loadBuiltinWorkflows(workflowsDir);
-  }
-
   function findWorkflowsDir(): string {
     const candidates = [
       process.env["FRONTFLOW_WORKFLOWS_DIR"],
@@ -781,7 +955,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       resolve(app.getAppPath(), "../../workflows"),
       resolve(app.getAppPath(), "workflows"),
     ].filter((p): p is string => !!p);
-    const dir = candidates.find((p) => existsSync(join(p, BUILTIN_WORKFLOW_FILES[0])));
+    const dir = candidates.find((p) => existsSync(join(p, `${FEATURE_DELIVERY_WORKFLOW_ID}.yaml`)));
     if (!dir) throw new Error(`Workflow definitions not found in ${candidates.join(", ")}`);
     return dir;
   }
@@ -790,6 +964,16 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
   return {
     handlers,
     async recover() {
+      // Unfinished runs of an earlier workflow version resume on the graph they started with.
+      for (const run of db.runStore.listActiveRuns()) {
+        if (engine.getDefinition(run.workflowId, run.workflowVersion)) continue;
+        const stored = db.workflowDefinitions.get<WorkflowDefinition>(run.workflowId, run.workflowVersion);
+        try {
+          if (stored) engine.registerDefinition(stored.definition);
+        } catch (err) {
+          console.warn("[engine]", `${run.workflowId}@${run.workflowVersion}:`, err instanceof Error ? err.message : err);
+        }
+      }
       const result = await engine.recover();
       if (result.missingDefinitions.length) console.warn("[engine] runs with unknown definitions:", result.missingDefinitions);
       artifactStore.applyRetention();

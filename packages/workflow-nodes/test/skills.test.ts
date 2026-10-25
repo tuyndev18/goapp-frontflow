@@ -27,17 +27,17 @@ describe("SkillLibrary", () => {
     lib.save({ name: "a11y", description: "Accessibility", body: "Label every input." });
     expect(lib.list().map((s) => s.name)).toEqual(["a11y", "react-page"]);
 
-    lib.setNodeSkills("B1.implement_ui", ["react-page", "a11y"]);
-    lib.setNodeSkills("B2.ui_states", ["react-page"]);
-    expect(lib.forNode("B1.implement_ui").map((s) => s.name)).toEqual(["react-page", "a11y"]);
+    lib.setNodeSkills("feature-delivery", "B1.implement_ui", ["react-page", "a11y"]);
+    lib.setNodeSkills("feature-delivery", "B2.ui_states", ["react-page"]);
+    expect(lib.forNode("feature-delivery", "B1.implement_ui").map((s) => s.name)).toEqual(["react-page", "a11y"]);
 
     const renamed = lib.save({ name: "react-page-logic", description: "Page logic v2", body: "Use hooks and services." }, "react-page");
     expect(renamed.body).toBe("Use hooks and services.\n");
     expect(lib.get("react-page")).toBeUndefined();
-    expect(lib.assignments()).toEqual({ "B1.implement_ui": ["react-page-logic", "a11y"], "B2.ui_states": ["react-page-logic"] });
+    expect(lib.assignments()).toEqual({ "feature-delivery/B1.implement_ui": ["react-page-logic", "a11y"], "feature-delivery/B2.ui_states": ["react-page-logic"] });
 
     lib.remove("react-page-logic");
-    expect(lib.assignments()).toEqual({ "B1.implement_ui": ["a11y"] });
+    expect(lib.assignments()).toEqual({ "feature-delivery/B1.implement_ui": ["a11y"] });
     expect(lib.list().map((s) => s.name)).toEqual(["a11y"]);
   });
 
@@ -50,8 +50,19 @@ describe("SkillLibrary", () => {
       path.join(root, "assignments.json"),
       JSON.stringify({ nodes: { "B.implement_ui": ["a11y"], "B2.business_ui": ["states"], "C.bind_ui_states": ["states", "a11y"] } }),
     );
-    expect(lib.assignments()).toEqual({ "B1.implement_ui": ["a11y"], "B2.ui_states": ["states", "a11y"] });
-    expect(lib.forNode("B2.ui_states").map((s) => s.name)).toEqual(["states", "a11y"]);
+    expect(lib.assignments()).toEqual({ "feature-delivery/B1.implement_ui": ["a11y"], "feature-delivery/B2.ui_states": ["states", "a11y"] });
+    expect(lib.forNode("feature-delivery", "B2.ui_states").map((s) => s.name)).toEqual(["states", "a11y"]);
+  });
+
+  it("keeps skills per workflow step, copied to a clone and dropped with a deleted workflow", () => {
+    const lib = new SkillLibrary(path.join(tmp("ff-skills-"), "skills"));
+    lib.save({ name: "a11y", description: "Accessibility", body: "Label every input." });
+    lib.setNodeSkills("feature-delivery", "B1.implement_ui", ["a11y"]);
+    expect(lib.forNode("quick-fix", "B1.implement_ui")).toEqual([]);
+    lib.copyWorkflow("feature-delivery", "quick-fix");
+    expect(lib.forNode("quick-fix", "B1.implement_ui").map((s) => s.name)).toEqual(["a11y"]);
+    lib.forgetWorkflow("quick-fix");
+    expect(lib.assignments()).toEqual({ "feature-delivery/B1.implement_ui": ["a11y"] });
   });
 
   it("validates names, duplicates and unknown skills", () => {
@@ -60,8 +71,8 @@ describe("SkillLibrary", () => {
     expect(() => lib.save({ name: "ok", description: " ", body: "y" })).toThrow(/Describe/);
     lib.save({ name: "ok", description: "x", body: "y" });
     expect(() => lib.save({ name: "ok", description: "x", body: "y" })).toThrow(/already exists/);
-    expect(() => lib.setNodeSkills("B2.api_binding", ["missing"])).toThrow(/Unknown skill: missing/);
-    expect(lib.setNodeSkills("B2.api_binding", [])).toEqual({});
+    expect(() => lib.setNodeSkills("feature-delivery", "B2.api_binding", ["missing"])).toThrow(/Unknown skill: missing/);
+    expect(lib.setNodeSkills("feature-delivery", "B2.api_binding", [])).toEqual({});
   });
 
   it("keeps other frontmatter keys when a skill is edited", () => {
@@ -119,7 +130,7 @@ describe("agent steps with skills", () => {
     const root = tmp("ff-agent-skills-");
     const lib = new SkillLibrary(path.join(root, "skills"));
     lib.save({ name: "react-page", description: "Page logic", body: "Use one service per feature." });
-    lib.setNodeSkills("B1.implement_ui", ["react-page"]);
+    lib.setNodeSkills("feature-delivery", "B1.implement_ui", ["react-page"]);
 
     const started: StartSessionInput[] = [];
     let handler: ((e: AgentEvent) => void) | undefined;
@@ -127,6 +138,7 @@ describe("agent steps with skills", () => {
     const ctx = {
       runId: "run_1",
       projectId: "p1",
+      workflowId: "feature-delivery",
       nodeId: "B1.implement_ui",
       nodeRunId: "nr_1",
       nodeType: "ai.implement_ui",

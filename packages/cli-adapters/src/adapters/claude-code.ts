@@ -217,11 +217,13 @@ export function claudeUserMessage(text: string): string {
 /**
  * argv for an interactive (TUI) session that starts working on `prompt` right away. The prompt
  * comes first because the tool-list options are variadic and would swallow a trailing positional.
- * `sessionId` (a UUID) pins the transcript file so the host can follow the session.
+ * `sessionId` (a UUID) pins the transcript file so the host can follow the session; with `resume`
+ * the prompt continues that existing session (same id and transcript, like reopening it in the IDE).
  */
 export function buildClaudeInteractiveArgs(input: {
   prompt: string;
   sessionId: string;
+  resume?: boolean;
   model?: string;
   /** low | medium | high | xhigh | max */
   effort?: string;
@@ -233,7 +235,7 @@ export function buildClaudeInteractiveArgs(input: {
   /** e.g. "user": skip the project's own .claude/settings*.json (their warnings and permission rules). */
   settingSources?: string;
 }): string[] {
-  const args = [input.prompt, "--session-id", input.sessionId];
+  const args = [input.prompt, input.resume ? "--resume" : "--session-id", input.sessionId];
   if (input.settingSources) args.push("--setting-sources", input.settingSources);
   if (input.model) args.push("--model", input.model);
   if (input.effort) args.push("--effort", input.effort);

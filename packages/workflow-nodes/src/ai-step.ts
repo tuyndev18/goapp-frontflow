@@ -4,12 +4,12 @@ import { sha256 } from "@frontflow/domain";
 import { redactString } from "@frontflow/event-schema";
 import { NodeError, type NodeExecutionContext, type NodeInput, type NodeResult } from "@frontflow/workflow-engine";
 import { runAgentStep } from "./agent.js";
-import { renderPrompt, SYSTEM_PROMPT_NAME } from "./prompt-library.js";
+import { additionsPrompt, renderPrompt, SYSTEM_PROMPT_NAME } from "./prompt-library.js";
 import type { NodeServices, StoredSnapshot } from "./services.js";
 import { plural, runInputs, saveArtifact, claudeAccountOf } from "./util.js";
 
 /**
- * AI steps are editable prompts (workflows/prompts/<step id>.md, overridable by the user) that an
+ * AI steps are editable prompts (workflows/prompts/<workflow>/<step id>.md, overridable by the user) that an
  * AI agent runs in the project folder — an interactive tmux-style session for Claude. The files a
  * step hands to the agent or gets back from it (imported documents, Markdown reports) live in the
  * run's folder in the tool's data, never in the project; the agent is given access to it.
@@ -79,15 +79,18 @@ export function fileList(files: string[]): string {
 }
 
 /**
- * The step's prompt: its template (named after the step id) with `{{placeholders}}` filled in.
- * The rendered prompt is kept as evidence of exactly what the agent was asked.
+ * The step's prompt: its template (named after the step id, in the run's workflow) followed by the
+ * project's own additions, with `{{placeholders}}` filled in. The rendered prompt is kept as
+ * evidence of exactly what the agent was asked.
  */
 export async function stepPrompt(ctx: NodeExecutionContext, services: NodeServices, vars: Record<string, string>): Promise<string> {
-  const template = services.prompts.get(ctx.nodeId);
+  const template = services.prompts.get(ctx.nodeId, ctx.workflowId);
+  const additions = (services.prompts.additions?.(ctx.projectId, ctx.workflowId, ctx.nodeId) ?? []).filter((a) => a.enabled && a.text.trim());
+  const extra = additionsPrompt(additions);
   // previousFailure is no longer filled (no validation gates) but user-edited prompts may still contain it.
-  const { text, missing } = renderPrompt(template.text, { feature: "", previousFailure: "", ...vars });
+  const { text, missing } = renderPrompt(extra ? `${template.text.trimEnd()}\n\n${extra}` : template.text, { feature: "", previousFailure: "", ...vars });
   if (missing.length) ctx.log("warn", `Prompt placeholders without a value: ${missing.map((m) => `{{${m}}}`).join(", ")}`);
-  ctx.log("info", `Prompt: ${template.customized ? "your edited prompt" : "default prompt"} for ${ctx.nodeId}`);
+  ctx.log("info", `Prompt: ${template.customized ? "your edited prompt" : "default prompt"} for ${ctx.nodeId}${additions.length ? ` + ${plural(additions.length, "project addition")}` : ""}`);
   await saveArtifact(ctx, services, "prompt", `${ctx.nodeId}-attempt${ctx.attempt}.md`, text, "text/markdown", `Prompt (attempt ${ctx.attempt})`);
   return text;
 }
