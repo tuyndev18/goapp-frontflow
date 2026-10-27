@@ -118,7 +118,7 @@ export function readinessHandlers(services: NodeServices): Record<string, NodeHa
             baSpec: fileList(spec.baSpecFiles),
             baScenarios: spec.reportPath,
             uiFiles: ui?.filesChanged.length ? ui.filesChanged.map((f) => `\n  - ${f}`).join("") : "the UI of this feature in the project (find it from the feature name)",
-            figmaFrames: design?.nodes.length ? untrusted("figma-frames", `${design.prompt}\n${design.nodes.map((n) => `- ${n.name} (${n.nodeId})`).join("\n")}`) : "Không có",
+            figmaFrames: design?.nodes.length ? untrusted("figma-frames", `File: ${design.fileName} (${design.fileKey ?? "file key unavailable"})\n${design.prompt}\n${design.nodes.map((n) => `- ${n.name} (${n.nodeId})`).join("\n")}`) : "Không có",
           },
           gate: {
             notEnough: "The BA and the UI built from Figma conflict (see “Mâu thuẫn cần chốt” in the review). Accept to follow the choices the review proposes, or write your decisions as a feature prompt addition of this step (or import a newer BA) and run it again.",

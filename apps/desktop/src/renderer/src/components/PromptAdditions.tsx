@@ -82,8 +82,7 @@ export function PromptAdditions({ projectId, runId, workflowId, nodeId }: { proj
     <div className="ff-stack">
       {featureName ? (
         <p className="ff-muted ff-small">
-          Instructions only <strong>{featureName}</strong> needs at this step (its screens, edge cases, data…). They are sent after the step's prompt and the additions of{" "}
-          {projectName}, in this order, so they win where they differ; other features of {projectName} do not get them.
+          Instructions only <strong>{featureName}</strong> needs at this step (its screens, edge cases, data…). Saved for this feature in {projectName}; they are sent after the shared prompt and project instructions, so they win where they differ. Other features are unaffected.
         </p>
       ) : (
         <p className="ff-muted ff-small">

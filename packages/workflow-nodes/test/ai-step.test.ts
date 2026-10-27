@@ -22,7 +22,7 @@ it("grants design review MCP access while keeping shell commands disabled", asyn
     return { sessionId: "session", resultText: "done", filesChanged: [] };
   });
   try {
-    const result = await reportStep(ctx, services, { inputs: { adapterId: "fake" }, upstream: {}, config: {} }, {
+    const result = await reportStep(ctx, services, { inputs: { snapshotIds: [], adapterId: "fake" }, upstream: {}, config: {} }, {
       fileName: "review.md", label: "Review", cwd: dir, vars: {}, withFigma: true,
     });
     expect(result.status).toBe("passed");

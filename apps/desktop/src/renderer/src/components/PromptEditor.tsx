@@ -18,8 +18,8 @@ type View = "step" | "system" | "project" | "feature";
  * Every AI step is just a prompt the agent runs in the project (an interactive session in AI
  * terminals); a manual check's prompt is the checklist shown to the person. The user edits it here
  * per workflow; the edit applies the next time the step runs (Retry or Run again reruns it).
- * `{{placeholders}}` are filled in by the step with its inputs. With a project, its own additions
- * to the step's prompt are edited here too, and with a run, the feature's own.
+ * `{{placeholders}}` are filled in by the step with its inputs. In a running feature, only that
+ * feature's additions can be edited here; shared workflow prompts are edited in workflow settings.
  */
 export function PromptEditor({
   workflowId,
@@ -39,14 +39,21 @@ export function PromptEditor({
   onSaved?(): void;
 }) {
   const notify = useApp((s) => s.notify);
-  const [view, setView] = useState<View>("step");
+  const [view, setView] = useState<View>(runId ? "feature" : "step");
   const [prompt, setPrompt] = useState<PromptDto>();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const isSystem = view === "system";
   const ref = isSystem ? { name: SYSTEM } : { workflowId, name: nodeId };
+  const scopes: Array<{ value: View; label: string }> = runId
+    ? [{ value: "feature", label: "This feature's instructions" }]
+    : [
+        { value: "step", label },
+        ...(projectId ? [{ value: "project" as const, label: "This project's additions" }] : []),
+        { value: "system", label: "System prompt (all AI steps)" },
+      ];
 
-  useEffect(() => setView("step"), [workflowId, nodeId]);
+  useEffect(() => setView(runId ? "feature" : "step"), [workflowId, nodeId, runId]);
   const additions = view === "project" || view === "feature";
 
   useEffect(() => {
@@ -87,24 +94,14 @@ export function PromptEditor({
   return (
     <div className="ff-pad ff-stack ff-prompt-editor">
       <div className="ff-row">
-        <div className="ff-tabs ff-tabs-small" role="tablist" aria-label="Which prompt">
-          <button type="button" role="tab" aria-selected={view === "step"} className={`ff-tab${view === "step" ? " ff-tab-active" : ""}`} onClick={() => setView("step")}>
-            {label}
-          </button>
-          {projectId ? (
-            <button type="button" role="tab" aria-selected={view === "project"} className={`ff-tab${view === "project" ? " ff-tab-active" : ""}`} onClick={() => setView("project")}>
-              This project's additions
-            </button>
-          ) : null}
-          {projectId && runId ? (
-            <button type="button" role="tab" aria-selected={view === "feature"} className={`ff-tab${view === "feature" ? " ff-tab-active" : ""}`} onClick={() => setView("feature")}>
-              This feature's additions
-            </button>
-          ) : null}
-          <button type="button" role="tab" aria-selected={isSystem} className={`ff-tab${isSystem ? " ff-tab-active" : ""}`} onClick={() => setView("system")}>
-            System prompt (all AI steps)
-          </button>
-        </div>
+        {scopes.length > 1 ? (
+          <label className="ff-row ff-small">
+            <span className="ff-muted">Scope</span>
+            <select className="ff-input" aria-label="Prompt scope" value={view} onChange={(e) => setView(e.target.value as View)}>
+              {scopes.map((scope) => <option key={scope.value} value={scope.value}>{scope.label}</option>)}
+            </select>
+          </label>
+        ) : <strong className="ff-small">{scopes[0]?.label}</strong>}
         {!additions && prompt?.defaultText ? prompt.customized ? <span className="ff-tag ff-tag-warn">edited</span> : <span className="ff-tag">default</span> : null}
       </div>
       {additions && projectId ? (

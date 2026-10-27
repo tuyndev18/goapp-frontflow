@@ -88,6 +88,8 @@ describe("feature delivery workflow", () => {
     const baReview = byId.get("B2.ba_ui_review")?.output as { reportPath: string; report: string; verdict: string };
     expect(baReview).toMatchObject({ reportPath: join(runDir, "ba-ui-review.md"), verdict: "enough" });
     expect(prompt("B2.ba_ui_review-attempt1.md")).toContain(scenarios.reportPath);
+    expect(prompt("B2.ba_ui_review-attempt1.md")).toContain("FILEKEY123");
+    expect(prompt("B2.ba_ui_review-attempt1.md")).toContain("123:456");
     expect(prompt("B2.ba_ui_review-attempt1.md")).not.toContain("{{");
     expect(prompt("B2.api_binding-attempt1.md")).toContain(baReview.reportPath);
     expect(prompt("C1.test_design-attempt1.md")).toContain(baReview.reportPath);
