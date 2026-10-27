@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ArtifactRecord, NodeRun } from "@frontflow/domain";
 import { AssumedBadge, StatusBadge, visualStateForNode } from "@frontflow/ui-components";
-import type { GraphNodeDto } from "../../../shared/ipc.js";
+import type { GraphNodeDto, StepAgentDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { ActivityFeed } from "../components/ActivityFeed.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { EffortSwitch } from "../components/EffortSwitch.js";
 import { FileActions } from "../components/FileActions.js";
+import { Menu } from "../components/Menu.js";
+import { EFFORTS, MODELS, type Effort } from "../lib/agentModels.js";
 import { Markdown } from "../components/Markdown.js";
 import { LiveTerminal } from "../components/LiveTerminal.js";
 import { InteractiveTerminal } from "../components/InteractiveTerminal.js";
@@ -116,112 +119,120 @@ export function StepDetail({
   const canRetry = nodeRun && ["failed", "blocked", "cancelled"].includes(nodeRun.status);
   // A finished step can run again, e.g. after its prompt was edited; the engine resets the steps after it.
   const canRunAgain = nodeRun?.status === "passed" || nodeRun?.status === "waiting_for_input";
-  const isGapGate = node.type === "readiness.review" || node.type === "tests.design" || node.type === "test.acceptance";
+  const isGapGate = ["readiness.review", "readiness.ba_ui_review", "tests.design", "test.acceptance", "test.e2e"].includes(node.type);
   const documentKind = documentKindOf(node.type);
 
   return (
     <section className="ff-detail" aria-label={`Step ${node.label}`}>
-      <header className="ff-detail-header">
-        <div className="ff-detail-title">
-          <h2>{node.label}</h2>
-          {canRunAgain ? (
-            <button
-              type="button"
-              className="ff-btn ff-btn-small"
-              title={`Runs this step again${node.ai ? " with its current prompt" : ""}; the steps after it run again too.`}
-              onClick={() => setConfirmRunAgain(true)}
-            >
-              ↻ Run again
-            </button>
-          ) : null}
-        </div>
-        <div className="ff-run-meta">
-          <StatusBadge spec={spec} {...(nodeRun && nodeRun.attempt > 1 ? { suffix: `attempt ${nodeRun.attempt}` } : {})} />
-          {nodeRun?.assumed ? <AssumedBadge /> : null}
-          {lane ? (
-            <span className="ff-meta-item">
-              <span className="ff-lane-dot" style={{ background: lane.color }} /> {lane.title}
-            </span>
-          ) : null}
-          {duration !== undefined ? <span className="ff-meta-item">⏱ {formatDuration(duration)}</span> : null}
-          <span className="ff-meta-item">{node.ai ? "🤖 AI CLI agent" : isManual ? "👤 Manual check" : "⚙ Automatic, no AI"}</span>
-        </div>
-        {node.description ? (
-          <p className="ff-muted ff-detail-desc" title={node.description}>
-            {node.description}
-          </p>
-        ) : null}
-        {node.ai && workflowId ? <StepSkills workflowId={workflowId} nodeId={node.id} /> : null}
-      </header>
-      <ConfirmDialog
-        open={confirmRunAgain}
-        title={`Run "${node.label}" again?`}
-        confirmLabel="Run again"
-        onCancel={() => setConfirmRunAgain(false)}
-        onConfirm={() => {
-          setConfirmRunAgain(false);
-          // A gap gate asks again instead of reusing gaps accepted earlier.
-          void act(
-            () => api.invoke("runs:retryNode", { runId, nodeId: node.id, ...(isGapGate ? { input: {} } : {}) }),
-            // A paused run keeps the reset steps waiting until it is resumed.
-            runPaused ? `${node.label} reset; the run is paused — click Resume to run it` : `Running ${node.label} again`,
-          );
-        }}
-      >
-        <p>The current result of this step is replaced, and every step after it is reset and runs again. Code changes those steps already made stay in the project.</p>
-      </ConfirmDialog>
-
-      {nodeRun?.status === "waiting_for_input" ? (
-        <div className="ff-callout ff-callout-warning">
-          <p>
-            <strong>⏸ Needs your input.</strong> {nodeRun.blockerSummary}
-          </p>
-          {documentKind ? (
-            <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} />
-          ) : node.type === "figma.design" ? (
-            <FigmaHandoffPanel runId={runId} nodeId={node.id} />
-          ) : isGapGate ? (
-            <div className="ff-actions">
-              <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: { accept: true } }), "Gaps accepted")}>
-                Accept gaps &amp; continue
+      <div className="ff-detail-top">
+        <header className="ff-detail-header">
+          <div className="ff-detail-title">
+            <h2>{node.label}</h2>
+            {canRunAgain ? (
+              <button
+                type="button"
+                className="ff-btn ff-btn-small"
+                title={`Runs this step again${node.ai ? " with its current prompt" : ""}; the steps after it run again too.`}
+                onClick={() => setConfirmRunAgain(true)}
+              >
+                ↻ Run again
               </button>
-              <span className="ff-muted ff-small">
-                {node.type === "readiness.review"
-                  ? "or import a newer API contract in Read API contract; this review then runs again. See Result for the review."
-                  : node.type === "test.acceptance"
-                    ? "or fix what fails (BA, design or API) and run this step again. See Result for the test report."
-                    : "or import a newer BA specification in Read BA specification; test design then runs again. See Evidence for the gap report."}
+            ) : null}
+          </div>
+          <div className="ff-run-meta">
+            <StatusBadge spec={spec} {...(nodeRun && nodeRun.attempt > 1 ? { suffix: `attempt ${nodeRun.attempt}` } : {})} />
+            {nodeRun?.assumed ? <AssumedBadge /> : null}
+            {lane ? (
+              <span className="ff-meta-item">
+                <span className="ff-lane-dot" style={{ background: lane.color }} /> {lane.title}
               </span>
+            ) : null}
+            {duration !== undefined ? <span className="ff-meta-item">⏱ {formatDuration(duration)}</span> : null}
+            <span className="ff-meta-item">{node.ai ? "🤖 AI CLI agent" : isManual ? "👤 Manual check" : "⚙ Automatic, no AI"}</span>
+          </div>
+          {node.description ? (
+            <p className="ff-muted ff-detail-desc" title={node.description}>
+              {node.description}
+            </p>
+          ) : null}
+          {node.ai && workflowId ? <StepSkills workflowId={workflowId} nodeId={node.id} /> : null}
+          {node.ai ? <StepAgent runId={runId} nodeId={node.id} /> : null}
+        </header>
+        <div className="ff-detail-callouts">
+          <ConfirmDialog
+            open={confirmRunAgain}
+            title={`Run "${node.label}" again?`}
+            confirmLabel="Run again"
+            onCancel={() => setConfirmRunAgain(false)}
+            onConfirm={() => {
+              setConfirmRunAgain(false);
+              // A gap gate asks again instead of reusing gaps accepted earlier.
+              void act(
+                () => api.invoke("runs:retryNode", { runId, nodeId: node.id, ...(isGapGate ? { input: {} } : {}) }),
+                // A paused run keeps the reset steps waiting until it is resumed.
+                runPaused ? `${node.label} reset; the run is paused — click Resume to run it` : `Running ${node.label} again`,
+              );
+            }}
+          >
+            <p>The current result of this step is replaced, and every step after it is reset and runs again. Code changes those steps already made stay in the project.</p>
+          </ConfirmDialog>
+  
+          {nodeRun?.status === "waiting_for_input" ? (
+            <div className="ff-callout ff-callout-warning">
+              <p>
+                {/* The Figma panel below already says what to do in Figma. */}
+                <strong>⏸ Needs your input.</strong> {node.type === "figma.design" ? null : nodeRun.blockerSummary}
+              </p>
+              {documentKind ? (
+                <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} />
+              ) : node.type === "figma.design" ? (
+                <FigmaHandoffPanel runId={runId} nodeId={node.id} />
+              ) : isGapGate ? (
+                <div className="ff-actions">
+                  <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: { accept: true } }), "Gaps accepted")}>
+                    Accept gaps &amp; continue
+                  </button>
+                  <span className="ff-muted ff-small">
+                    {node.type === "readiness.review"
+                      ? "or import a newer API contract in Read API contract; this review then runs again. See Result for the review."
+                      : node.type === "readiness.ba_ui_review"
+                        ? "to follow the choices the review proposes, or add your decisions as a feature prompt addition of this step (or import a newer BA) and run it again. See Result for the review."
+                        : node.type === "test.acceptance" || node.type === "test.e2e"
+                          ? "or fix what fails (BA, design or API) and run this step again. See Result for the test report."
+                          : "or import a newer BA specification in Read BA specification; test design then runs again. See Evidence for the gap report."}
+                  </span>
+                </div>
+              ) : (
+                <div className="ff-actions">
+                  <input className="ff-input ff-grow" placeholder="Optional note" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
+                  <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: note ? { note } : {} }))}>
+                    {isManual ? "✓ Checked — continue" : "Continue"}
+                  </button>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="ff-actions">
-              <input className="ff-input ff-grow" placeholder="Optional note" value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" />
-              <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: note ? { note } : {} }))}>
-                {isManual ? "✓ Checked — continue" : "Continue"}
-              </button>
+          ) : null}
+          {nodeRun?.status === "failed" || nodeRun?.status === "blocked" ? (
+            <div className={`ff-callout ${nodeRun.status === "failed" ? "ff-callout-danger" : "ff-callout-warning"}`}>
+              <p>
+                <strong>{nodeRun.status === "failed" ? "✕ Failed" : "⚠ Blocked"}:</strong> {nodeRun.error ? `${nodeRun.error.code} — ${nodeRun.error.message}` : nodeRun.blockerSummary}
+              </p>
+              {canRetry ? (
+                <button type="button" className="ff-btn" onClick={() => void act(() => api.invoke("runs:retryNode", { runId, nodeId: node.id }), "Retrying step")}>
+                  ↻ Retry this step
+                </button>
+              ) : null}
             </div>
-          )}
-        </div>
-      ) : null}
-      {nodeRun?.status === "failed" || nodeRun?.status === "blocked" ? (
-        <div className={`ff-callout ${nodeRun.status === "failed" ? "ff-callout-danger" : "ff-callout-warning"}`}>
-          <p>
-            <strong>{nodeRun.status === "failed" ? "✕ Failed" : "⚠ Blocked"}:</strong> {nodeRun.error ? `${nodeRun.error.code} — ${nodeRun.error.message}` : nodeRun.blockerSummary}
-          </p>
-          {canRetry ? (
-            <button type="button" className="ff-btn" onClick={() => void act(() => api.invoke("runs:retryNode", { runId, nodeId: node.id }), "Retrying step")}>
-              ↻ Retry this step
-            </button>
+          ) : null}
+  
+          {documentKind && nodeRun && ["passed", "failed", "blocked"].includes(nodeRun.status) ? (
+            <div className="ff-callout">
+              <DocumentHistory uploads={(nodeRun.output as { history?: DocumentUpload[] } | undefined)?.history ?? []} />
+              <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} update />
+            </div>
           ) : null}
         </div>
-      ) : null}
-
-      {documentKind && nodeRun && ["passed", "failed", "blocked"].includes(nodeRun.status) ? (
-        <div className="ff-callout">
-          <DocumentHistory uploads={(nodeRun.output as { history?: DocumentUpload[] } | undefined)?.history ?? []} />
-          <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} update />
-        </div>
-      ) : null}
+      </div>
 
       <div className="ff-tabs ff-tabs-flush" role="tablist">
         {TABS.filter((t) => (t !== "Prompt" || node.ai || isManual) && (t !== "Terminal" || node.ai)).map((t) => (
@@ -236,7 +247,7 @@ export function StepDetail({
 
       <div className="ff-detail-body">
         {tab === "Activity" && <ActivityFeed items={items} showStep={false} {...(projectRoot ? { projectRoot } : {})} emptyText={nodeRun ? "No activity yet." : "This step has not started yet."} />}
-        {tab === "Prompt" && (node.ai || isManual) && workflowId ? <PromptEditor workflowId={workflowId} nodeId={node.id} nodeType={node.type} label={node.label} projectId={projectId} /> : null}
+        {tab === "Prompt" && (node.ai || isManual) && workflowId ? <PromptEditor workflowId={workflowId} nodeId={node.id} nodeType={node.type} label={node.label} projectId={projectId} runId={runId} /> : null}
         {tab === "Result" && <ResultView runId={runId} value={nodeRun?.output} report={report} />}
         {tab === "Files" && (
           <div className="ff-pad">
@@ -310,7 +321,10 @@ export function StepDetail({
           ) : !nodeRun ? (
             <p className="ff-pad ff-muted">The step&apos;s Claude terminal opens when the step runs.</p>
           ) : running ? (
-            <p className="ff-pad ff-muted">The step is running in its Claude terminal: see AI terminals in All activity.</p>
+            // Before Claude opens, a code-changing step first saves a snapshot of the project; the terminal replaces this as soon as it opens.
+            <p className="ff-pad ff-muted" role="status">
+              Preparing the step: its Claude Code terminal opens here as soon as Claude starts.
+            </p>
           ) : (
             // The step's own pane closes with the step; its Claude session stays and can be reopened.
             <div className="ff-pad ff-stack ff-step-reopen">
@@ -366,6 +380,65 @@ function StepSkills({ workflowId, nodeId }: { workflowId: string; nodeId: string
       <button type="button" className="ff-link" onClick={() => navigate({ name: "skills", step })}>
         {names.length ? "Manage" : "Add skills"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * The model and effort this AI step runs with in this feature. A choice here wins over the
+ * feature's and the workflow's, from the step's next attempt; Default goes back to them.
+ */
+function StepAgent({ runId, nodeId }: { runId: string; nodeId: string }) {
+  const notify = useApp((s) => s.notify);
+  const [agent, setAgent] = useState<StepAgentDto>();
+  useEffect(() => {
+    void api.invoke("runs:stepAgent", { runId, nodeId }).then(setAgent, () => setAgent(undefined));
+  }, [runId, nodeId]);
+  if (!agent) return null;
+  const current = agent;
+
+  async function choose(next: { model?: string; effort?: string }) {
+    try {
+      setAgent(await api.invoke("runs:setStepAgent", { runId, nodeId, model: next.model ?? current.step.model ?? "", effort: (next.effort ?? current.step.effort ?? "") as Effort }));
+      notify("info", "Applies the next time this step runs");
+    } catch (err) {
+      notify("error", errorMessage(err));
+    }
+  }
+  /** What Default means for this step: the feature's choice, else the workflow's, else Claude Code's. */
+  const inherited = (key: "model" | "effort") => {
+    const from = current.feature[key] ? "feature" : current.workflow[key] ? "workflow" : "Claude Code";
+    return { value: current.feature[key] ?? current.workflow[key], from };
+  };
+  const modelName = (v: string | undefined) => (v ? (MODELS.find((m) => m.value === v)?.label ?? v) : "Claude Code's own");
+  const effortName = (v: string | undefined) => (v ? (EFFORTS.find((e) => e.value === v)?.label ?? v) : "Claude Code's own");
+  const model = inherited("model");
+  const effort = inherited("effort");
+  const effortLabelId = `ff-step-effort-${nodeId}`;
+
+  return (
+    <div className="ff-detail-skills ff-small">
+      <span className="ff-muted">Model:</span>
+      <Menu
+        label="Model of this step"
+        className="ff-link"
+        trigger={<>{current.step.model ? modelName(current.step.model) : `${modelName(model.value)} · ${model.from}`} ▾</>}
+        items={[
+          { label: `Default — ${modelName(model.value)} (${model.from})`, checked: !current.step.model, onSelect: () => void choose({ model: "" }) },
+          ...MODELS.map((m) => ({ label: m.label, hint: m.hint, checked: current.step.model === m.value, onSelect: () => void choose({ model: m.value }) })),
+        ]}
+      />
+      <span className="ff-step-effort">
+        <span className="ff-muted" id={effortLabelId}>
+          Effort ({current.step.effort ? effortName(current.step.effort) : `${effortName(effort.value)} · ${effort.from}`})
+        </span>
+        <EffortSwitch
+          levels={[{ value: "", label: `Default — ${effortName(effort.value)} (${effort.from})` }, ...EFFORTS]}
+          value={(current.step.effort ?? "") as Effort}
+          onChange={(v) => void choose({ effort: v })}
+          labelledBy={effortLabelId}
+        />
+      </span>
     </div>
   );
 }

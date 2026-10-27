@@ -41,7 +41,9 @@ import {
   SkillLibrary,
   PromptLibrary,
   promptPlaceholders,
+  StepAgentStore,
   stepsWithoutPrompt,
+  upgradeWorkflow,
   type FeatureRunInputs,
   type GoFigmaService,
   type ImportedApiContract,
@@ -59,6 +61,7 @@ import type {
   RunSummary,
   SessionDto,
   SkillNodeDto,
+  StepAgentDto,
   WorkflowDto,
   WorkflowNodeDto,
 } from "../shared/ipc.js";
@@ -230,14 +233,24 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
 
   // --- Workflows: the built-in ones and the user's own (Workflows screen) ---
   const workflowsDir = findWorkflowsDir();
-  const workflows = new WorkflowLibrary({ builtinDir: workflowsDir, userDir: join(dataDir, "workflows"), check: checkWorkflowNodes });
+  const workflows = new WorkflowLibrary({ builtinDir: workflowsDir, userDir: join(dataDir, "workflows"), check: checkWorkflowNodes, upgrade: upgradeWorkflow });
   const builtinWorkflow = () => workflows.get(FEATURE_DELIVERY_WORKFLOW_ID).definition;
 
   // --- Prompts: every AI step is an editable prompt per workflow (shipped defaults + the user's edits),
-  // plus each project's additions appended after it ---
+  // plus each project's additions appended after it, then each feature's ---
   const prompts = new PromptLibrary({ defaultsDir: join(workflowsDir, "prompts"), userDir: join(dataDir, "prompts") });
   prompts.migrateLegacyEdits(FEATURE_DELIVERY_WORKFLOW_ID);
   const projectPrompts = new ProjectPromptStore((projectId) => join(dataDir, "projects", projectId, "prompt-additions.json"));
+  // In the run's data folder, so deleting the feature removes them.
+  const featurePrompts = new ProjectPromptStore((runId) => {
+    const run = requireRun(runId);
+    return join(dataDir, "projects", run.projectId, "runs", run.id, "prompt-additions.json");
+  });
+  // The model and effort chosen for single steps on the run screen; deleted with the run too.
+  const stepAgents = new StepAgentStore((runId) => {
+    const run = requireRun(runId);
+    return join(dataDir, "projects", run.projectId, "runs", run.id, "step-agents.json");
+  });
   const promptDto = (name: string, workflowId: string | undefined) => {
     const t = prompts.find(name, workflowId);
     // A step of a new workflow has no prompt until the user writes one.
@@ -292,10 +305,12 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     prompts: {
       get: (name, workflowId) => prompts.get(name, workflowId),
       additions: (projectId, workflowId, nodeId) => projectPrompts.list(projectId, workflowId, nodeId),
+      featureAdditions: (runId, workflowId, nodeId) => featurePrompts.list(runId, workflowId, nodeId),
     },
     policy,
     approvals,
     claudeProfileFor: (accountId) => accounts.claudeProfileFor(accountId),
+    stepAgent: (runId, nodeId) => stepAgents.get(runId, nodeId),
     mcpConfigDir: join(dataDir, "mcp"),
     scratchDir: join(dataDir, "scratch"),
     // Removed with the run (deleteRun).
@@ -425,6 +440,12 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
     const project = db.projects.get(projectId);
     if (!project) throw new AppError("NOT_FOUND", `Unknown project ${projectId}`);
     return project;
+  }
+
+  function requireRun(runId: string): WorkflowRun {
+    const run = db.runStore.getRun(runId);
+    if (!run) throw new AppError("NOT_FOUND", `Unknown run ${runId}`);
+    return run;
   }
 
   function summarize(project: Project): ProjectSummary {
@@ -667,6 +688,13 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       const text = Buffer.from(content).toString("utf8");
       return { record, text: text.length > 500_000 ? `${text.slice(0, 500_000)}\n…truncated` : text };
     },
+    "runs:stepAgent": ({ runId, nodeId }) => stepAgentDto(runId, nodeId),
+    // From the step's next attempt (not started yet, Retry, Run again); a running attempt keeps its model.
+    "runs:setStepAgent": ({ runId, nodeId, model, effort }) => {
+      stepAgentDto(runId, nodeId); // NOT_FOUND for a step the run does not have, before anything is saved
+      stepAgents.set(runId, nodeId, { model, effort });
+      return stepAgentDto(runId, nodeId);
+    },
 
     "sessions:list": ({ projectId }) => db.aiSessions.listByProject(projectId, 200).map(sessionDto),
     "sessions:cancel": ({ sessionId }) => requireRunner().cancel(sessionId),
@@ -773,6 +801,12 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       if (additions.some((a) => !a.text.trim())) throw new AppError("EMPTY_PROMPT", "An addition cannot be empty; remove it instead");
       return projectPrompts.set(projectId, workflowId, nodeId, additions);
     },
+    "featurePrompts:list": ({ runId }) => featurePrompts.all(requireRun(runId).id),
+    "featurePrompts:save": ({ runId, nodeId, additions }) => {
+      const run = requireRun(runId);
+      if (additions.some((a) => !a.text.trim())) throw new AppError("EMPTY_PROMPT", "An addition cannot be empty; remove it instead");
+      return featurePrompts.set(run.id, run.workflowId, nodeId, additions);
+    },
 
     "workflows:list": () => {
       const builtin = builtinWorkflow();
@@ -789,7 +823,7 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         nodeTypes: NODE_TYPES.map((t) => ({
           ...t,
           ...(t.needs ? { needs: [...t.needs] } : {}),
-          template: newNodeSpec(t.type, { id: t.fixedId ?? "", group: "" }, builtin) as WorkflowNodeDto,
+          ...(t.retired ? {} : { template: newNodeSpec(t.type, { id: t.fixedId ?? "", group: "" }, builtin) as WorkflowNodeDto }),
         })),
       };
     },
@@ -862,8 +896,10 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
   const REPORT_FILES = [
     { name: "api-review.md", title: "UI vs API review" },
     { name: "ba-scenarios.md", title: "BA scenarios" },
+    { name: "ba-ui-review.md", title: "UI vs BA review" },
     { name: "test-design.md", title: "Test design" },
     { name: "acceptance-tests.md", title: "Acceptance tests" },
+    { name: "e2e-tests.md", title: "E2E tests" },
     { name: "evidence-report.md", title: "Evidence report" },
   ];
 
@@ -910,6 +946,15 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
       lanes: d.lanes ?? [...new Set(d.nodes.map((n) => n.group ?? "main"))].map((g) => ({ id: g, title: g })),
       nodes: d.nodes.map((n) => structuredClone({ ...n, group: n.group ?? "main" }) as WorkflowNodeDto),
     };
+  }
+
+  /** An AI step's model and effort at each level that can set them, for the run screen. */
+  function stepAgentDto(runId: string, nodeId: string): StepAgentDto {
+    const run = requireRun(runId);
+    const node = definitionOf(run).nodes.find((n) => n.id === nodeId);
+    if (!node) throw new AppError("NOT_FOUND", `Unknown step ${nodeId} in run ${runId}`);
+    const pick = (model: unknown, effort: unknown) => ({ ...(typeof model === "string" && model ? { model } : {}), ...(typeof effort === "string" && effort ? { effort } : {}) });
+    return { step: stepAgents.get(run.id, nodeId), feature: pick(run.inputs["model"], run.inputs["effort"]), workflow: pick(node.config?.["model"], node.config?.["effort"]) };
   }
 
   function workflowDto(workflowId: string): WorkflowDto {

@@ -8,8 +8,8 @@ import { createHarness, REPO_ROOT, type Harness } from "./harness.js";
 
 /**
  * A workflow the user made: generic steps whose prompts are all they are (`ai.prompt`, run by the
- * agent in the project), a person checking the result (`manual.check`), and the project's own
- * additions appended to a step's prompt.
+ * agent in the project), a person checking the result (`manual.check`), and the project's and the
+ * feature's own additions appended to a step's prompt.
  */
 describe("user-made workflow", () => {
   let h: Harness | undefined;
@@ -18,7 +18,7 @@ describe("user-made workflow", () => {
     h = undefined;
   });
 
-  it("runs prompt steps with the project's additions, then waits for the manual check", async () => {
+  it("runs prompt steps with the project's and the feature's additions, then waits for the manual check", async () => {
     h = await createHarness({ aiFixture: "custom-workflow" });
     const workflows = new WorkflowLibrary({ builtinDir: join(REPO_ROOT, "workflows"), userDir: join(h.dir, "workflows"), check: checkWorkflowNodes });
     const definition = workflows.save({
@@ -45,7 +45,11 @@ describe("user-made workflow", () => {
       { title: "Tokens", text: "Use the design tokens in src/theme.", enabled: true },
       { title: "Off", text: "Never sent.", enabled: false },
     ]);
-    h.services.prompts = { get: (name, workflowId) => prompts.get(name, workflowId), additions: (...args) => additions.list(...args) };
+    h.services.prompts = {
+      get: (name, workflowId) => prompts.get(name, workflowId),
+      additions: (...args) => additions.list(...args),
+      featureAdditions: (_runId, _workflowId, nodeId) => (nodeId === "implement" ? [{ id: "pa_f", title: "", text: "Only the cancel button changes.", enabled: true }] : []),
+    };
 
     const engine = h.newEngine();
     const run = await engine.startRun({ projectId: h.projectId, definition, inputs: h.createRunInputs({ importLater: true }) });
@@ -60,7 +64,9 @@ describe("user-made workflow", () => {
     expect((implement?.output as PromptStepOutput).report).toBeUndefined();
     const sent = (name: string) => h!.artifacts.readText(h!.db.artifacts.listByRun(run.id).find((a) => a.name === name)!.id);
     const implementPrompt = sent("implement-attempt1.md");
-    expect(implementPrompt).toMatch(/^Implement Run t_\w+\.\n\n## Additional instructions for this project\n\n### Tokens\nUse the design tokens in src\/theme\.$/);
+    expect(implementPrompt).toMatch(
+      /^Implement Run t_\w+\.\n\n## Additional instructions for this project\n\n### Tokens\nUse the design tokens in src\/theme\.\n\n## Additional instructions for this feature\n\nOnly the cancel button changes\.$/,
+    );
 
     // The summary the agent wrote is the step's result, for the next steps.
     const runDir = join(h.dataDir, "projects", h.projectId, "runs", run.id, "files");

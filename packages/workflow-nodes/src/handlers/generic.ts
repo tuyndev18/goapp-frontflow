@@ -51,7 +51,10 @@ export function genericHandlers(services: NodeServices): Record<string, NodeHand
     [MANUAL_CHECK_TYPE]: {
       async execute(ctx, input) {
         const template = services.prompts.get(ctx.nodeId, ctx.workflowId);
-        const extra = additionsPrompt(services.prompts.additions?.(ctx.projectId, ctx.workflowId, ctx.nodeId) ?? []);
+        const extra = additionsPrompt(
+          services.prompts.additions?.(ctx.projectId, ctx.workflowId, ctx.nodeId) ?? [],
+          services.prompts.featureAdditions?.(ctx.runId, ctx.workflowId, ctx.nodeId) ?? [],
+        );
         const checklist = renderPrompt(extra ? `${template.text.trimEnd()}\n\n${extra}` : template.text, {
           feature: featureOf(input),
           runFolder: runFolder(services, ctx),

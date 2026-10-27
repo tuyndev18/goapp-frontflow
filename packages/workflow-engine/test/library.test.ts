@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,9 +7,11 @@ import { FEATURE_DELIVERY_WORKFLOW_ID, WorkflowDefinitionError, WorkflowLibrary,
 
 const WORKFLOWS_DIR = fileURLToPath(new URL("../../../workflows", import.meta.url));
 
-function library(check?: ConstructorParameters<typeof WorkflowLibrary>[0]["check"]) {
+type Options = ConstructorParameters<typeof WorkflowLibrary>[0];
+
+function library(check?: Options["check"], upgrade?: Options["upgrade"]) {
   const userDir = join(mkdtempSync(join(tmpdir(), "ff-workflows-")), "workflows");
-  return { lib: new WorkflowLibrary({ builtinDir: WORKFLOWS_DIR, userDir, ...(check ? { check } : {}) }), userDir };
+  return { lib: new WorkflowLibrary({ builtinDir: WORKFLOWS_DIR, userDir, ...(check ? { check } : {}), ...(upgrade ? { upgrade } : {}) }), userDir };
 }
 
 const raw = (extra: Record<string, unknown> = {}) => ({
@@ -67,6 +69,28 @@ describe("WorkflowLibrary", () => {
     writeFileSync(join(userDir, "broken.yaml"), "id: broken\nnodes: 3\n");
     writeFileSync(join(userDir, "other.yaml"), "id: quick-fix\nname: X\nnodes:\n  - { id: a, type: t }\n");
     expect(lib.list().map((e) => e.definition.id)).toEqual([FEATURE_DELIVERY_WORKFLOW_ID, "quick-fix"]);
+  });
+
+  it("upgrades a user workflow saved before a change of the host's steps once, as a new version", () => {
+    let upgrades = 0;
+    const { lib, userDir } = library(undefined, (def) => {
+      if (!def.nodes.some((n) => n.id === "fix")) return undefined;
+      upgrades++;
+      return { ...def, nodes: def.nodes.map((n) => ({ ...n, id: n.id === "fix" ? "repair" : n.id, dependencies: n.dependencies.map((d) => (d === "fix" ? "repair" : d)) })) };
+    });
+    mkdirSync(userDir, { recursive: true });
+    writeFileSync(
+      join(userDir, "quick-fix.yaml"),
+      "id: quick-fix\nname: Quick fix\nversion: 3\nlanes: [{ id: main, title: Main }]\nnodes:\n  - { id: fix, type: ai.prompt, group: main }\n  - { id: check, type: manual.check, group: main, dependencies: [fix] }\n",
+    );
+    const { definition } = lib.get("quick-fix");
+    expect(definition.version).toBe(4);
+    expect(definition.nodes.map((n) => [n.id, n.dependencies])).toEqual([
+      ["repair", []],
+      ["check", ["repair"]],
+    ]);
+    expect(lib.get("quick-fix").definition.version).toBe(4);
+    expect(upgrades).toBe(1);
   });
 
   it("makes free ids from names", () => {

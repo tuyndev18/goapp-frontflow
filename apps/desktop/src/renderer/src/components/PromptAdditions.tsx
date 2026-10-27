@@ -13,12 +13,15 @@ const toDraft = (a: PromptAdditionDto): Draft => ({ ...a, key: a.id });
 const same = (a: Draft[], b: Draft[]) => JSON.stringify(a.map(({ key: _k, ...r }) => r)) === JSON.stringify(b.map(({ key: _k, ...r }) => r));
 
 /**
- * A project's own instructions for one workflow step: sent after the step's prompt, in this order,
- * whenever the step runs in this project. Disabled ones are kept but not sent.
+ * Own instructions for one workflow step, sent after the step's prompt in this order: a project's
+ * whenever the step runs in that project, or, with `runId`, one feature's after the project's.
+ * Disabled ones are kept but not sent.
  */
-export function ProjectPromptAdditions({ projectId, workflowId, nodeId }: { projectId: string; workflowId: string; nodeId: string }) {
+export function PromptAdditions({ projectId, runId, workflowId, nodeId }: { projectId: string; runId?: string; workflowId: string; nodeId: string }) {
   const notify = useApp((s) => s.notify);
   const projectName = useApp((s) => s.projects.find((p) => p.id === projectId)?.name ?? projectId);
+  const featureName = useApp((s) => (runId ? (s.runStates[runId]?.run.title ?? "this feature") : undefined));
+  const owner = featureName ?? projectName;
   const [saved, setSaved] = useState<Draft[]>();
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [busy, setBusy] = useState(false);
@@ -27,7 +30,7 @@ export function ProjectPromptAdditions({ projectId, workflowId, nodeId }: { proj
   useEffect(() => {
     let live = true;
     setSaved(undefined);
-    api.invoke("projectPrompts:list", { projectId }).then(
+    (runId ? api.invoke("featurePrompts:list", { runId }) : api.invoke("projectPrompts:list", { projectId })).then(
       (all) => {
         if (!live) return;
         const list = (all[`${workflowId}/${nodeId}`] ?? []).map(toDraft);
@@ -39,7 +42,7 @@ export function ProjectPromptAdditions({ projectId, workflowId, nodeId }: { proj
     return () => {
       live = false;
     };
-  }, [projectId, workflowId, nodeId, notify]);
+  }, [projectId, runId, workflowId, nodeId, notify]);
 
   function update(i: number, patch: Partial<Draft>) {
     setDrafts((d) => d.map((a, j) => (j === i ? { ...a, ...patch } : a)));
@@ -57,17 +60,13 @@ export function ProjectPromptAdditions({ projectId, workflowId, nodeId }: { proj
   async function save() {
     setBusy(true);
     try {
+      const additions = drafts.map(({ key: _k, id, ...a }) => ({ ...a, ...(id ? { id } : {}) }));
       const list = (
-        await api.invoke("projectPrompts:save", {
-          projectId,
-          workflowId,
-          nodeId,
-          additions: drafts.map(({ key: _k, id, ...a }) => ({ ...a, ...(id ? { id } : {}) })),
-        })
+        await (runId ? api.invoke("featurePrompts:save", { runId, nodeId, additions }) : api.invoke("projectPrompts:save", { projectId, workflowId, nodeId, additions }))
       ).map(toDraft);
       setSaved(list);
       setDrafts(list);
-      notify("info", `Saved the additions of ${projectName}`);
+      notify("info", `Saved the additions of ${owner}`);
     } catch (err) {
       notify("error", errorMessage(err));
     } finally {
@@ -75,16 +74,23 @@ export function ProjectPromptAdditions({ projectId, workflowId, nodeId }: { proj
     }
   }
 
-  if (!saved) return <Loading label="Loading project additions" />;
+  if (!saved) return <Loading label={featureName ? "Loading feature additions" : "Loading project additions"} />;
   const dirty = !same(saved, drafts);
   const canSave = dirty && !busy && drafts.every((a) => a.text.trim());
 
   return (
     <div className="ff-stack">
-      <p className="ff-muted ff-small">
-        Instructions only <strong>{projectName}</strong> needs at this step (its conventions, folders, test accounts…). They are sent after the step's prompt, in this order; the
-        step's prompt itself stays the same for every project.
-      </p>
+      {featureName ? (
+        <p className="ff-muted ff-small">
+          Instructions only <strong>{featureName}</strong> needs at this step (its screens, edge cases, data…). They are sent after the step's prompt and the additions of{" "}
+          {projectName}, in this order, so they win where they differ; other features of {projectName} do not get them.
+        </p>
+      ) : (
+        <p className="ff-muted ff-small">
+          Instructions only <strong>{projectName}</strong> needs at this step (its conventions, folders, test accounts…). They are sent after the step's prompt, in this order, in
+          every feature of this project; the step's prompt itself stays the same for every project.
+        </p>
+      )}
       {drafts.length ? (
         <ol className="ff-additions">
           {drafts.map((a, i) => (

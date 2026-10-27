@@ -18,6 +18,7 @@ export * from "./skills.js";
 export { PromptLibrary, ProjectPromptStore, PromptError, additionsPrompt, renderPrompt, promptPlaceholders, SYSTEM_PROMPT_NAME } from "./prompt-library.js";
 export type { PromptAddition, PromptSource, PromptTemplate } from "./prompt-library.js";
 export * from "./node-types.js";
+export { StepAgentStore, type StepAgent } from "./step-agents.js";
 export type { ManualCheckOutput, PromptStepOutput } from "./handlers/generic.js";
 
 /** Handlers for every node type of the workflow catalog (NODE_TYPES). */

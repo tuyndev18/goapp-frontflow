@@ -5,6 +5,8 @@ export interface MenuItem {
   hint?: string;
   danger?: boolean;
   disabled?: boolean;
+  /** Set on every item of a menu that picks one value: the picked one is marked. */
+  checked?: boolean;
   onSelect(): void;
 }
 
@@ -24,7 +26,8 @@ export function Menu({ label, trigger, className, disabled, items }: { label: st
             <button
               key={item.label}
               type="button"
-              role="menuitem"
+              role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+              aria-checked={item.checked}
               className={`ff-menu-item${item.danger ? " ff-menu-danger" : ""}`}
               disabled={item.disabled}
               onClick={() => {
@@ -32,7 +35,10 @@ export function Menu({ label, trigger, className, disabled, items }: { label: st
                 item.onSelect();
               }}
             >
-              <span>{item.label}</span>
+              <span>
+                {item.label}
+                {item.checked ? " ✓" : ""}
+              </span>
               {item.hint ? <small>{item.hint}</small> : null}
             </button>
           ))}

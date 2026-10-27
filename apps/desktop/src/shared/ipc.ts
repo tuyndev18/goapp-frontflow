@@ -25,6 +25,10 @@ const skillName = z.string().trim().min(1).max(64);
 const workflowId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/);
 /** A workflow step id, which is also its prompt's name. */
 const stepName = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/);
+/** Claude Code `--model`: an alias (fable, opus, sonnet, haiku) or a full model id. */
+const agentModel = z.string().trim().max(80).regex(/^[A-Za-z0-9._\[\]-]+$/);
+/** Claude Code `--effort`. */
+const agentEffort = z.enum(["low", "medium", "high", "xhigh", "max"]);
 const laneSchema = z.object({
   id: z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$/),
   title: z.string().trim().max(120),
@@ -59,13 +63,13 @@ export const requestSchemas = {
     workflowId: workflowId.optional(),
     /** Claude Code steps run as this saved account (its own config folder) instead of the machine's login. */
     claudeAccountId: id.optional(),
-    /** Claude Code `--model`: an alias (fable, opus, sonnet, haiku) or a full model id; default: Claude Code's own. */
-    model: z.string().trim().max(80).regex(/^[A-Za-z0-9._\[\]-]+$/).optional(),
-    /** Claude Code `--effort`; default: Claude Code's own. */
-    effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+    /** Model of every AI step; default: each step's own in the workflow, else Claude Code's. */
+    model: agentModel.optional(),
+    /** Effort of every AI step; default: each step's own in the workflow, else Claude Code's. */
+    effort: agentEffort.optional(),
   }),
   // One upload (one or more files) into a document step: the API contract for A.api_contract, the BA
-  // specification for C1.ba_spec, the test operations guide for C2.ops_guide. The step only uses its latest
+  // specification for B2.ba_spec, the test operations guide for C2.ops_guide. The step only uses its latest
   // upload; it (and the steps after it) runs again.
   "runs:importDocuments": z
     .object({
@@ -93,6 +97,9 @@ export const requestSchemas = {
     .refine((v) => !!v.path !== !!v.artifactId, { message: "Give exactly one of path or artifactId" }),
   "runs:artifacts": z.object({ runId: id, nodeRunId: id.optional() }),
   "runs:readArtifact": z.object({ artifactId: id }),
+  // The model and effort of one AI step of a feature, chosen on the run screen; "" goes back to the feature's or the workflow's.
+  "runs:stepAgent": z.object({ runId: id, nodeId: stepName }),
+  "runs:setStepAgent": z.object({ runId: id, nodeId: stepName, model: agentModel.or(z.literal("")), effort: agentEffort.or(z.literal("")) }),
   "sessions:list": z.object({ projectId: id }),
   "sessions:cancel": z.object({ sessionId: id }),
   "sessions:rawLog": z.object({ sessionId: id }),
@@ -152,6 +159,13 @@ export const requestSchemas = {
   "projectPrompts:save": z.object({
     projectId: id,
     workflowId,
+    nodeId: stepName,
+    additions: z.array(z.object({ id: id.optional(), title: z.string().max(200), text: z.string().max(50_000), enabled: z.boolean() })).max(20),
+  }),
+  // A feature's own instructions, appended after the project's; the step is one of its run's workflow.
+  "featurePrompts:list": z.object({ runId: id }),
+  "featurePrompts:save": z.object({
+    runId: id,
     nodeId: stepName,
     additions: z.array(z.object({ id: id.optional(), title: z.string().max(200), text: z.string().max(50_000), enabled: z.boolean() })).max(20),
   }),
@@ -318,8 +332,8 @@ export interface NodeTypeDto {
   fixedId?: string;
   /** Steps whose output it reads: they must run before it. */
   needs?: string[];
-  /** A new node of this type; the editor sets its id (generic types), label and group. */
-  template: WorkflowNodeDto;
+  /** A new node of this type; the editor sets its id (generic types), label and group. Absent for a retired type: it cannot be added. */
+  template?: WorkflowNodeDto;
 }
 
 export interface WorkflowSummaryDto {
@@ -354,6 +368,13 @@ export interface WorkflowDto extends Omit<WorkflowSummaryDto, "steps"> {
 export interface WorkflowsStateDto {
   workflows: WorkflowSummaryDto[];
   nodeTypes: NodeTypeDto[];
+}
+
+/** Where an AI step's model and effort come from, most specific first: this step of the run, the whole run, the workflow step. */
+export interface StepAgentDto {
+  step: { model?: string; effort?: string };
+  feature: { model?: string; effort?: string };
+  workflow: { model?: string; effort?: string };
 }
 
 export interface RunStateDto {
@@ -616,6 +637,8 @@ export interface IpcResponses {
   "runs:revealFile": void;
   "runs:artifacts": ArtifactRecord[];
   "runs:readArtifact": { record: ArtifactRecord; text?: string; dataUrl?: string };
+  "runs:stepAgent": StepAgentDto;
+  "runs:setStepAgent": StepAgentDto;
   "sessions:list": SessionDto[];
   "sessions:cancel": void;
   "sessions:rawLog": string;
@@ -651,6 +674,9 @@ export interface IpcResponses {
   /** "<workflowId>/<nodeId>" → the project's additions to that step's prompt. */
   "projectPrompts:list": Record<string, PromptAdditionDto[]>;
   "projectPrompts:save": PromptAdditionDto[];
+  /** "<workflowId>/<nodeId>" → the feature's additions to that step's prompt. */
+  "featurePrompts:list": Record<string, PromptAdditionDto[]>;
+  "featurePrompts:save": PromptAdditionDto[];
   "workflows:list": WorkflowsStateDto;
   "workflows:get": WorkflowDto;
   "workflows:create": WorkflowDto;

@@ -5,6 +5,7 @@ import type { FigmaHandoff } from "@frontflow/figma-mcp-bridge";
 import type { ApprovalBroker, PolicyEngine } from "@frontflow/policy";
 import type { PromptSource } from "./prompt-library.js";
 import type { SkillSource } from "./skills.js";
+import type { StepAgent } from "./step-agents.js";
 
 /**
  * Everything the built-in node handlers need from the host. The desktop main
@@ -37,6 +38,8 @@ export interface NodeServices {
    * renewed there by Claude Code); undefined: the machine's login is that account already.
    */
   claudeProfileFor?(accountId: string): Promise<string | undefined>;
+  /** The model and effort chosen for this step of this run on the run screen (StepAgentStore). */
+  stepAgent?(runId: string, nodeId: string): StepAgent;
   /** Directory for per-session MCP config files. */
   mcpConfigDir: string;
   /** Per-run working directories for AI steps that must not touch the project (e.g. document analysis). */
@@ -120,7 +123,7 @@ export interface ImportedApiContract {
   history?: ImportedBatch[];
 }
 
-/** provideInput payload for C1.ba_spec: the latest upload of the BA specification, one or more documents. */
+/** provideInput payload for B2.ba_spec: the latest upload of the BA specification, one or more documents. */
 export interface ImportedBaSpec {
   ba: ImportedDocument[] | ImportedDocument;
   /** Every upload into the step, oldest first; the last one is `ba`. */
@@ -145,7 +148,7 @@ export interface FeatureRunInputs {
   snapshotIds: string[];
   gitBaseSha?: string;
   title?: string;
-  /** Documents can be pinned at creation or imported later into C1.ba_spec / A.api_contract. */
+  /** Documents can be pinned at creation or imported later into B2.ba_spec / A.api_contract. */
   ba?: ImportedDocument;
   api?: ImportedApiDocument;
   /** Selection pinned at creation; otherwise A.figma_scope waits for one pushed from the plugin. */
@@ -153,9 +156,9 @@ export interface FeatureRunInputs {
   adapterId: string;
   /** Claude Code steps run as this saved account (its own config folder) instead of the machine's login. */
   claudeAccountId?: string;
-  /** Model of every AI step (an alias such as `opus`, or a full model id); default: the CLI's own setting. */
+  /** Model of every AI step (an alias such as `opus`, or a full model id); default: each step's `config.model`, else the CLI's own setting. */
   model?: string;
-  /** Reasoning effort of every AI step: low | medium | high | xhigh | max; default: the CLI's own setting. */
+  /** Reasoning effort of every AI step: low | medium | high | xhigh | max; default: each step's `config.effort`, else the CLI's own setting. */
   effort?: string;
   allowAssumptions: boolean;
   /** Optional base URL of a running backend for provider verification. */

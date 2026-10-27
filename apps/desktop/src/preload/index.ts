@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { FrontflowApi, IpcChannel, IpcPushChannel, IpcResult } from "../shared/ipc.js";
 
 // Kept as literal lists so the preload never forwards arbitrary channel names.
-const INVOKE_PREFIXES = ["app:", "projects:", "clis:", "runs:", "sessions:", "accounts:", "approvals:", "figma:", "skills:", "prompts:", "projectPrompts:", "workflows:", "settings:", "terminal:"];
+const INVOKE_PREFIXES = ["app:", "projects:", "clis:", "runs:", "sessions:", "accounts:", "approvals:", "figma:", "skills:", "prompts:", "projectPrompts:", "featurePrompts:","workflows:", "settings:", "terminal:"];
 const PUSH_CHANNELS = new Set<string>([
   "run:event",
   "run:state",

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { join } from "node:path";
 import { newId } from "@frontflow/domain";
 import { WORKFLOW_ID_PATTERN } from "@frontflow/workflow-engine";
-import { stepKey } from "./skills.js";
+import { currentStepId, currentStepKey, MOVED_STEPS, stepKey } from "./skills.js";
 
 /**
  * Every AI step is just a prompt the user can read and edit, per workflow step. The shipped
@@ -11,7 +11,7 @@ import { stepKey } from "./skills.js";
  * reset. Steps of the user's own workflows only have that stored prompt. `_system.md` (no
  * workflow) is the system prompt every AI step runs with. Templates use `{{name}}` placeholders
  * that the step fills in when it runs. On top of a step's prompt, each project can add its own
- * instructions ({@link ProjectPromptStore}).
+ * instructions, and each feature (run) its own after those ({@link ProjectPromptStore}).
  */
 export interface PromptTemplate {
   /** Undefined for the system prompt. */
@@ -23,7 +23,7 @@ export interface PromptTemplate {
   defaultText: string;
 }
 
-/** An instruction a project adds after a step's prompt. */
+/** An instruction a project or a feature adds after a step's prompt. */
 export interface PromptAddition {
   id: string;
   title: string;
@@ -32,10 +32,11 @@ export interface PromptAddition {
   enabled: boolean;
 }
 
-/** What node handlers need: the current template of a step, and what the project adds to it. */
+/** What node handlers need: the current template of a step, and what the project and the feature add to it. */
 export interface PromptSource {
   get(name: string, workflowId?: string): PromptTemplate;
   additions?(projectId: string, workflowId: string, nodeId: string): PromptAddition[];
+  featureAdditions?(runId: string, workflowId: string, nodeId: string): PromptAddition[];
 }
 
 export const SYSTEM_PROMPT_NAME = "_system";
@@ -109,7 +110,8 @@ export class PromptLibrary implements PromptSource {
 
   /**
    * Edits saved before workflows could be chosen sit directly in the user folder, named after a
-   * step of the one workflow there was; they move into that workflow's folder.
+   * step of the one workflow there was; they move into that workflow's folder. Edits of a moved
+   * step ({@link MOVED_STEPS}) take its new id in every workflow.
    */
   migrateLegacyEdits(workflowId: string): void {
     const dir = this.options.userDir;
@@ -122,6 +124,13 @@ export class PromptLibrary implements PromptSource {
       if (existsSync(target)) rmSync(join(dir, file));
       else renameSync(join(dir, file), target);
     }
+    for (const wf of readdirSync(dir)) {
+      if (!WORKFLOW_ID_PATTERN.test(wf) || !statSync(join(dir, wf)).isDirectory()) continue;
+      for (const [from, to] of Object.entries(MOVED_STEPS)) {
+        const source = join(dir, wf, `${from}.md`);
+        if (existsSync(source) && !existsSync(join(dir, wf, `${to}.md`))) renameSync(source, join(dir, wf, `${to}.md`));
+      }
+    }
   }
 
   private paths(name: string, workflowId: string | undefined): [string, string] {
@@ -131,27 +140,28 @@ export class PromptLibrary implements PromptSource {
       return [join(this.options.defaultsDir, `${name}.md`), join(this.options.userDir, `${name}.md`)];
     }
     const wf = checkWorkflow(workflowId);
-    return [join(this.options.defaultsDir, wf, `${name}.md`), join(this.options.userDir, wf, `${name}.md`)];
+    const step = currentStepId(name);
+    return [join(this.options.defaultsDir, wf, `${step}.md`), join(this.options.userDir, wf, `${step}.md`)];
   }
 }
 
 const MAX_ADDITIONS = 20;
 
 /**
- * Each project's additions to step prompts, in one JSON file per project
- * (`{ steps: { "<workflow>/<step>": PromptAddition[] } }`). They are appended after the step's
- * prompt, in order, when the step runs in that project.
+ * Additions to step prompts, in one JSON file per owner (`{ steps: { "<workflow>/<step>":
+ * PromptAddition[] } }`): a project, whose additions are sent in all its features, or one feature
+ * (run), whose additions follow the project's. They are appended after the step's prompt, in order.
  */
 export class ProjectPromptStore {
-  constructor(private readonly fileOf: (projectId: string) => string) {}
+  constructor(private readonly fileOf: (ownerId: string) => string) {}
 
-  list(projectId: string, workflowId: string, nodeId: string): PromptAddition[] {
-    return this.all(projectId)[stepKey(workflowId, nodeId)] ?? [];
+  list(ownerId: string, workflowId: string, nodeId: string): PromptAddition[] {
+    return this.all(ownerId)[stepKey(workflowId, nodeId)] ?? [];
   }
 
-  /** stepKey → additions, for every step this project changes. */
-  all(projectId: string): Record<string, PromptAddition[]> {
-    const file = this.fileOf(projectId);
+  /** stepKey → additions, for every step this owner changes. */
+  all(ownerId: string): Record<string, PromptAddition[]> {
+    const file = this.fileOf(ownerId);
     if (!existsSync(file)) return {};
     try {
       const raw = JSON.parse(readFileSync(file, "utf8")) as { steps?: unknown };
@@ -166,7 +176,7 @@ export class ProjectPromptStore {
             ? [{ id, title: typeof title === "string" ? title : "", text, enabled: enabled !== false }]
             : [];
         });
-        if (additions.length) out[key] = additions;
+        if (additions.length) out[currentStepKey(key)] = [...(out[currentStepKey(key)] ?? []), ...additions];
       }
       return out;
     } catch {
@@ -175,29 +185,31 @@ export class ProjectPromptStore {
   }
 
   /** Replaces a step's additions (their order is the order they are sent in); new ones get an id. */
-  set(projectId: string, workflowId: string, nodeId: string, additions: Array<Omit<PromptAddition, "id"> & { id?: string }>): PromptAddition[] {
+  set(ownerId: string, workflowId: string, nodeId: string, additions: Array<Omit<PromptAddition, "id"> & { id?: string }>): PromptAddition[] {
     checkWorkflow(workflowId);
     checkName(nodeId);
     const list = additions.slice(0, MAX_ADDITIONS).map((a) => ({ id: a.id || newId("pa"), title: a.title.trim(), text: a.text.trim(), enabled: a.enabled }));
-    const all = this.all(projectId);
+    const all = this.all(ownerId);
     const key = stepKey(workflowId, nodeId);
     if (list.length) all[key] = list;
     else delete all[key];
-    const file = this.fileOf(projectId);
+    const file = this.fileOf(ownerId);
     mkdirSync(join(file, ".."), { recursive: true });
     writeFileSync(file, JSON.stringify({ steps: all }, null, 2));
     return list;
   }
 }
 
-/** The enabled additions as the prompt section that follows a step's own prompt. */
-export function additionsPrompt(additions: PromptAddition[]): string {
-  const used = additions.filter((a) => a.enabled && a.text.trim());
-  if (!used.length) return "";
-  return [
-    "## Additional instructions for this project",
-    ...used.map((a) => (a.title ? `### ${a.title}\n${a.text.trim()}` : a.text.trim())),
-  ].join("\n\n");
+/**
+ * The enabled additions as the prompt sections that follow a step's own prompt: the project's,
+ * then the feature's, so the feature's instructions come last and win where they differ.
+ */
+export function additionsPrompt(additions: PromptAddition[], featureAdditions: PromptAddition[] = []): string {
+  const section = (heading: string, list: PromptAddition[]) => {
+    const used = list.filter((a) => a.enabled && a.text.trim());
+    return used.length ? [heading, ...used.map((a) => (a.title ? `### ${a.title}\n${a.text.trim()}` : a.text.trim()))].join("\n\n") : "";
+  };
+  return [section("## Additional instructions for this project", additions), section("## Additional instructions for this feature", featureAdditions)].filter(Boolean).join("\n\n");
 }
 
 function read(path: string): string | undefined {

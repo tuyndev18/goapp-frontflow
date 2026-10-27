@@ -77,7 +77,7 @@ GoApp FrontFlow là desktop application gắn với một source-code project tr
 
 ## 4. Phạm vi workflow
 
-GoApp FrontFlow sử dụng ba workflow nghiệp vụ chính. Thứ tự chạy: B1 (UI từ Figma) → A (rà soát với API Contract khi có) → B2 (ghép API), song song với C (BA tests).
+GoApp FrontFlow sử dụng ba workflow nghiệp vụ chính. Thứ tự chạy: B1 (UI từ Figma) → A (rà soát với API Contract khi có) → B2 (đọc BA Specification, ghép API theo các trường hợp giao diện BA nêu) → C (BA tests). Thiết kế test case (C1) bắt đầu ngay khi BA đã được đọc, song song với việc ghép API.
 
 ### Workflow A — FE Readiness: Figma × API Contract
 
@@ -85,7 +85,7 @@ Khi API Contract sẵn sàng và UI đã được dựng, trích xuất UI flow 
 
 ### Workflow B — UI Implementation & API Integration
 
-B1: triển khai presentational UI từ Figma ngay (mock data, chưa cần API). B2: sau khi có FE Readiness Package thì ghép API vào UI đã dựng, xử lý loading/empty/error/permission và chạy automated tests.
+B1: triển khai presentational UI từ Figma ngay (mock data, chưa cần API). B2: đọc BA Specification (kịch bản nghiệp vụ và các trường hợp giao diện cần xử lý), rồi sau khi có FE Readiness Package thì ghép API vào UI đã dựng theo các kịch bản đó, xử lý loading/empty/error/permission cùng các trường hợp giao diện BA nêu và chạy automated tests.
 
 ### Workflow C — BA-driven Test Design & Auto-test
 
@@ -98,7 +98,7 @@ Kết hợp BA Specification với UI Flow Model và API mapping để sinh test
 | Figma | Mô tả screen, interaction, UI state, responsive và visual contract | Có |
 | API Contract | Mô tả data, operation, response, error, auth và permission contract | Có |
 | Current Project | Mô tả component, convention, routing, API client và test setup | Có, ở mức implementation feasibility |
-| BA Specification | Sinh business acceptance scenarios, test data và E2E expectations | Không trực tiếp |
+| BA Specification | Các trường hợp giao diện cần xử lý khi ghép API (B2); sinh business acceptance scenarios, test data và E2E expectations | Không trực tiếp (nhưng B2 chờ BA) |
 
 Không thực hiện BA ↔ API audit độc lập như một gate chính. Nếu BA requirement liên quan FE, nó được truy vết gián tiếp qua `BA requirement → UI flow → API operation`.
 
@@ -145,19 +145,12 @@ flowchart TB
         READY -- Ready or FE-only --> READINESS[FE Readiness Package]
     end
 
-    subgraph C1["C1 · BA-driven Test Design"]
-        BA --> TEST_DESIGN[Extract business scenarios and expected outcomes]
-        UI_FLOW --> TEST_DESIGN
-        MAP --> TEST_DESIGN
-        TEST_DESIGN --> TESTABLE{Every business scenario testable?}
-        TESTABLE -- No --> TEST_GAP[Testability Gap Report]
-        TEST_GAP --> WAIT_UPDATE
-        TESTABLE -- Yes --> TEST_CASES[Acceptance Test Case Package]
-    end
-
     subgraph B2["B2 · API Integration"]
+        BA --> BA_SCENARIOS[Extract business scenarios and the UI cases they name]
         READINESS --> API_BIND[Implement API client and bindings in the built UI]
+        BA_SCENARIOS --> API_BIND
         API_BIND --> STATES[Loading, empty, error and permission states]
+        BA_SCENARIOS --> STATES
         STATES --> TESTS[Component, contract and integration tests]
         TESTS --> QUALITY[Build, typecheck, lint, visual and a11y checks]
         QUALITY --> PASS{All implementation gates pass?}
@@ -166,6 +159,16 @@ flowchart TB
         FIX --> TESTS
         RETRY -- No --> BLOCKED[Blocked with evidence]
         PASS -- Yes --> FEATURE[Implemented Feature Package]
+    end
+
+    subgraph C1["C1 · BA-driven Test Design"]
+        BA_SCENARIOS --> TEST_DESIGN[Design acceptance test cases from the BA]
+        UI_FLOW --> TEST_DESIGN
+        MAP --> TEST_DESIGN
+        TEST_DESIGN --> TESTABLE{Every business scenario testable?}
+        TESTABLE -- No --> TEST_GAP[Testability Gap Report]
+        TEST_GAP --> WAIT_UPDATE
+        TESTABLE -- Yes --> TEST_CASES[Acceptance Test Case Package]
     end
 
     subgraph C2["C2 · Automated Acceptance Test Execution"]
@@ -413,7 +416,7 @@ git:
 
 ### 11.1. BA Specification Markdown — automated test source
 
-BA Specification không phải nguồn chính của FE Readiness. Nó được parse thành business scenarios, preconditions, test data, actions và expected outcomes. Workflow C kết hợp các scenarios này với UI Flow Model và API mapping để tạo automated acceptance/E2E test cases. Nếu BA chưa sẵn sàng, implementation có thể tiếp tục nhưng workflow mang trạng thái `test_design_pending` và chưa được báo business-verified.
+BA Specification không phải nguồn chính của FE Readiness. Nó được parse thành business scenarios, preconditions, test data, actions và expected outcomes. Vì BA nêu các trường hợp giao diện cần xử lý (trạng thái, thông báo, validation, quyền), BA được đọc ở B2: việc ghép API và UI states chờ BA, theo các scenarios đó. Workflow C kết hợp các scenarios này với UI Flow Model và API mapping để tạo automated acceptance/E2E test cases. Khi BA chưa sẵn sàng, workflow ở trạng thái `waiting` (UI từ Figma và rà soát API Contract vẫn chạy) và chưa được báo business-verified. Trạng thái `test_design_pending` chỉ còn cho workflow tự định nghĩa đánh dấu bước chờ bằng `waitingRunStatus`.
 
 Khuyến nghị template:
 
@@ -748,7 +751,7 @@ AI gọi MCP theo nhu cầu để giảm context size.
 
 ## 14. Workflow C — BA-driven Test Design & Auto-test
 
-BA Specification là business test oracle, không phải trục mapping chính giữa Figma và API. Test case phải được sinh trước hoặc song song với implementation để tránh việc AI viết test chỉ nhằm hợp thức hóa code đã tạo.
+BA Specification là nguồn ưu tiên cho logic và luồng của test case; thiết kế bổ sung hiển thị, nhãn và text thông báo, trừ khi BA bắt buộc nguyên văn. Câu chữ tương đương về nghĩa và chi tiết thiết kế BA chưa quy định không tự tạo conflict. BA không phải trục mapping chính giữa Figma và API; nó được đọc một lần ở B2 (§11.1) và C1 dùng lại kết quả đó. Test case phải được sinh trước hoặc song song với implementation để tránh việc AI viết test chỉ nhằm hợp thức hóa code đã tạo.
 
 ### 14.1. C1 — Generate Acceptance Test Cases
 

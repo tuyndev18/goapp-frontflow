@@ -455,16 +455,20 @@ describe("WorkflowEngine control operations", () => {
 
   it("resumes a waiting_for_input node with provideInput", async () => {
     const seen: unknown[] = [];
-    const { engine } = setup({
-      verify: handler((_ctx, input) => {
-        seen.push(input.providedInput);
-        if (input.providedInput === undefined) {
-          return { status: "waiting_for_input", prompt: "Upload an updated BA document", output: { issues: 2 } };
-        }
-        return { status: "passed", output: { verified: input.providedInput } };
-      }),
-      map: pass(),
-    });
+    let now = Date.parse("2026-10-25T10:00:00.000Z");
+    const { engine } = setup(
+      {
+        verify: handler((_ctx, input) => {
+          seen.push(input.providedInput);
+          if (input.providedInput === undefined) {
+            return { status: "waiting_for_input", prompt: "Upload an updated BA document", output: { issues: 2 } };
+          }
+          return { status: "passed", output: { verified: input.providedInput } };
+        }),
+        map: pass(),
+      },
+      { clock: () => new Date(now) },
+    );
     const run = await engine.startRun({
       projectId: "p",
       inputs: INPUTS,
@@ -480,11 +484,14 @@ describe("WorkflowEngine control operations", () => {
     expect(statusOf(waiting, "map")).toBe("waiting_for_dependency");
 
     await expect(engine.provideInput(run.id, "map", {})).rejects.toThrow(/not waiting_for_input/);
+    now += 3_600_000;
     await engine.provideInput(run.id, "verify", { snapshotId: "snap_2" });
     const state = await engine.waitForRun(run.id);
     expect(state.run.status).toBe("completed");
     expect(seen).toEqual([undefined, { snapshotId: "snap_2" }]);
     expect(nodeOf(state, "verify").output).toEqual({ verified: { snapshotId: "snap_2" } });
+    // The time spent waiting for the user is not the step's: it counts from the new input.
+    expect(nodeOf(state, "verify").startedAt).toBe("2026-10-25T11:00:00.000Z");
   });
 
   it("retries a failed node manually and re-opens blocked dependents", async () => {
@@ -727,8 +734,10 @@ describe("WorkflowEngine persistence, idempotency and recovery", () => {
     expect(store.getRun(run.id)?.status).toBe("completed");
   });
 
-  it("keeps a node's resume state across retries and restarts, and drops it when the node is run again", async () => {
+  it("keeps a node's resume state and start time across retries and restarts, and drops them when the node is run again", async () => {
     const store = new InMemoryRunStore();
+    let now = Date.parse("2026-10-25T10:00:00.000Z");
+    const clock = () => new Date(now);
     const definition = workflow([spec("ai", { retryPolicy: { maxAttempts: 3, backoff: "none", retryableErrors: ["AGENT_SESSION_FAILED"] } })]);
     const seen: unknown[] = [];
     const engine1 = setup(
@@ -742,12 +751,15 @@ describe("WorkflowEngine persistence, idempotency and recovery", () => {
           return hang(ctx.signal);
         }),
       },
-      { store },
+      { store, clock },
     ).engine;
     const run = await engine1.startRun({ projectId: "p", inputs: INPUTS, definition });
     await waitUntil(() => store.listNodeRuns(run.id)[0]?.attempt === 2);
     expect(store.listNodeRuns(run.id)[0]?.resumeState).toEqual({ session: "s1" });
+    // The retry continues the same work: its time counts from the first start.
+    expect(store.listNodeRuns(run.id)[0]?.startedAt).toBe("2026-10-25T10:00:00.000Z");
     engine1.shutdown();
+    now += 60_000;
 
     const { engine: engine2 } = setup(
       {
@@ -756,15 +768,20 @@ describe("WorkflowEngine persistence, idempotency and recovery", () => {
           return { status: "passed", output: "done" };
         }),
       },
-      { store },
+      { store, clock },
     );
     engine2.registerDefinition(definition);
     await engine2.recover();
-    await engine2.waitForRun(run.id);
+    const recovered = await engine2.waitForRun(run.id);
+    // Restarted after the app was closed: still the same start.
+    expect(nodeOf(recovered, "ai").startedAt).toBe("2026-10-25T10:00:00.000Z");
+    now += 60_000;
     await engine2.retryNode(run.id, "ai");
     const state = await engine2.waitForRun(run.id);
     expect(seen).toEqual([undefined, { session: "s1" }, { session: "s1" }, undefined]);
     expect(nodeOf(state, "ai").resumeState).toBeUndefined();
+    // Run again is new work: it counts from then.
+    expect(nodeOf(state, "ai").startedAt).toBe("2026-10-25T10:02:00.000Z");
   });
 
   it("keeps paused runs paused on recovery and reports missing definitions", async () => {
@@ -827,17 +844,16 @@ describe("built-in feature-delivery workflow", () => {
     await engine.provideInput(run.id, "A.api_contract", { api: { snapshotId: "s" } });
     const gate = await engine.waitForRun(run.id);
     expect(gate.run.status).toBe("waiting");
-    // API integration waits for the readiness gate.
-    expect(nodeOf(gate, "B2.api_binding").waitingOn).toEqual(["A.review"]);
+    // API integration waits for the readiness gate and the BA checked against the UI.
+    expect(nodeOf(gate, "B2.api_binding").waitingOn).toEqual(["A.review", "B2.ba_ui_review"]);
 
     await engine.provideInput(run.id, "A.review", { accept: true });
-    // Without a BA spec, B2 still completes and the run is only test_design_pending (spec §11.1).
-    const pending = await engine.waitForRun(run.id);
-    expect(pending.run.status).toBe("test_design_pending");
-    expect(statusOf(pending, "B2.ui_states")).toBe("passed");
-    expect(nodeOf(pending, "C2.generate_tests").waitingOn).toEqual(["C1.test_design"]);
+    // The BA names the UI cases to handle: the integration waits for it.
+    const noBa = await engine.waitForRun(run.id);
+    expect(noBa.run.status).toBe("waiting");
+    expect(nodeOf(noBa, "B2.api_binding").waitingOn).toEqual(["B2.ba_ui_review"]);
 
-    await engine.provideInput(run.id, "C1.ba_spec", { ba: { snapshotId: "s" } });
+    await engine.provideInput(run.id, "B2.ba_spec", { ba: { snapshotId: "s" } });
     const state = await engine.waitForRun(run.id);
     expect(state.run.status).toBe("completed");
     expect(statusOf(state, "C2.evidence_report")).toBe("passed");

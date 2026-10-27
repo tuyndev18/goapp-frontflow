@@ -111,8 +111,8 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
   const needsInput = nodes.filter((n) => latest.get(n.id)?.status === "waiting_for_input");
   const failedSteps = nodes.filter((n) => ["failed", "blocked"].includes(latest.get(n.id)?.status ?? ""));
   const selectedNode = nodes.find((n) => n.id === selected);
-  // What the canvas keeps in view: the open step, else where the run needs attention or is working.
-  const focus = selected ?? needsInput[0]?.id ?? failedSteps[0]?.id ?? runningSteps[0]?.id;
+  // What the canvas follows, most urgent first: where the run waits for the user, works, or failed.
+  const live = [...needsInput, ...runningSteps, ...failedSteps].map((n) => n.id);
 
   async function control(action: "runs:pause" | "runs:resume" | "runs:cancel") {
     try {
@@ -190,7 +190,7 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
       <div ref={split} className={`ff-run-split${layout.canvas ? "" : " ff-run-split-panel"}`} style={{ "--panel-w": `${layout.width}px` } as CSSProperties}>
         {layout.canvas ? (
           <>
-            <GraphView runId={runId} graph={state.graph} latest={latest} lastByNode={lastByNode} selected={selected} focus={focus} now={now} onSelect={setSelected} />
+            <GraphView runId={runId} graph={state.graph} latest={latest} lastByNode={lastByNode} selected={selected} live={live} now={now} onSelect={setSelected} />
             <div
               className="ff-splitter"
               role="separator"

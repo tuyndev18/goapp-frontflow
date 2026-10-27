@@ -3,7 +3,7 @@ import type { PromptDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { Loading } from "./Loading.js";
-import { ProjectPromptAdditions } from "./ProjectPromptAdditions.js";
+import { PromptAdditions } from "./PromptAdditions.js";
 
 const SYSTEM = "_system";
 /** What the generic steps fill in (see workflow-nodes handlers/generic.ts). */
@@ -12,14 +12,14 @@ const GENERIC_PLACEHOLDERS: Record<string, string[]> = {
   "manual.check": ["feature", "runFolder", "reports"],
 };
 
-type View = "step" | "system" | "project";
+type View = "step" | "system" | "project" | "feature";
 
 /**
  * Every AI step is just a prompt the agent runs in the project (an interactive session in AI
  * terminals); a manual check's prompt is the checklist shown to the person. The user edits it here
  * per workflow; the edit applies the next time the step runs (Retry or Run again reruns it).
  * `{{placeholders}}` are filled in by the step with its inputs. With a project, its own additions
- * to the step's prompt are edited here too.
+ * to the step's prompt are edited here too, and with a run, the feature's own.
  */
 export function PromptEditor({
   workflowId,
@@ -27,6 +27,7 @@ export function PromptEditor({
   nodeType,
   label,
   projectId,
+  runId,
   onSaved,
 }: {
   workflowId: string;
@@ -34,6 +35,7 @@ export function PromptEditor({
   nodeType?: string;
   label: string;
   projectId?: string;
+  runId?: string;
   onSaved?(): void;
 }) {
   const notify = useApp((s) => s.notify);
@@ -45,8 +47,10 @@ export function PromptEditor({
   const ref = isSystem ? { name: SYSTEM } : { workflowId, name: nodeId };
 
   useEffect(() => setView("step"), [workflowId, nodeId]);
+  const additions = view === "project" || view === "feature";
+
   useEffect(() => {
-    if (view === "project") return;
+    if (additions) return;
     let live = true;
     setPrompt(undefined);
     api.invoke("prompts:get", isSystem ? { name: SYSTEM } : { workflowId, name: nodeId }).then(
@@ -92,14 +96,19 @@ export function PromptEditor({
               This project's additions
             </button>
           ) : null}
+          {projectId && runId ? (
+            <button type="button" role="tab" aria-selected={view === "feature"} className={`ff-tab${view === "feature" ? " ff-tab-active" : ""}`} onClick={() => setView("feature")}>
+              This feature's additions
+            </button>
+          ) : null}
           <button type="button" role="tab" aria-selected={isSystem} className={`ff-tab${isSystem ? " ff-tab-active" : ""}`} onClick={() => setView("system")}>
             System prompt (all AI steps)
           </button>
         </div>
-        {view !== "project" && prompt?.defaultText ? prompt.customized ? <span className="ff-tag ff-tag-warn">edited</span> : <span className="ff-tag">default</span> : null}
+        {!additions && prompt?.defaultText ? prompt.customized ? <span className="ff-tag ff-tag-warn">edited</span> : <span className="ff-tag">default</span> : null}
       </div>
-      {view === "project" && projectId ? (
-        <ProjectPromptAdditions projectId={projectId} workflowId={workflowId} nodeId={nodeId} />
+      {additions && projectId ? (
+        <PromptAdditions key={view} projectId={projectId} {...(view === "feature" && runId ? { runId } : {})} workflowId={workflowId} nodeId={nodeId} />
       ) : (
         <>
           <p className="ff-muted ff-small">

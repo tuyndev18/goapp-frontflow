@@ -49,7 +49,7 @@ export interface Harness {
   /** The tool's data folder (run files live under projects/<project>/runs/<run>/files). */
   dataDir: string;
   newEngine(): WorkflowEngine;
-  /** `importLater`: the documents are supplied to A.api_contract / C1.ba_spec instead of being pinned at creation. */
+  /** `importLater`: the documents are supplied to A.api_contract / B2.ba_spec instead of being pinned at creation. */
   createRunInputs(options?: { baFixture?: string; allowAssumptions?: boolean; importLater?: boolean }): FeatureRunInputs;
   importApi(fixture?: string): ImportedApiContract;
   importBa(fixture?: string): ImportedBaSpec;

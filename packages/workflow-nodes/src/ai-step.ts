@@ -80,17 +80,18 @@ export function fileList(files: string[]): string {
 
 /**
  * The step's prompt: its template (named after the step id, in the run's workflow) followed by the
- * project's own additions, with `{{placeholders}}` filled in. The rendered prompt is kept as
- * evidence of exactly what the agent was asked.
+ * project's own additions and the feature's, with `{{placeholders}}` filled in. The rendered
+ * prompt is kept as evidence of exactly what the agent was asked.
  */
 export async function stepPrompt(ctx: NodeExecutionContext, services: NodeServices, vars: Record<string, string>): Promise<string> {
   const template = services.prompts.get(ctx.nodeId, ctx.workflowId);
   const additions = (services.prompts.additions?.(ctx.projectId, ctx.workflowId, ctx.nodeId) ?? []).filter((a) => a.enabled && a.text.trim());
-  const extra = additionsPrompt(additions);
+  const featureAdditions = (services.prompts.featureAdditions?.(ctx.runId, ctx.workflowId, ctx.nodeId) ?? []).filter((a) => a.enabled && a.text.trim());
+  const extra = additionsPrompt(additions, featureAdditions);
   // previousFailure is no longer filled (no validation gates) but user-edited prompts may still contain it.
   const { text, missing } = renderPrompt(extra ? `${template.text.trimEnd()}\n\n${extra}` : template.text, { feature: "", previousFailure: "", ...vars });
   if (missing.length) ctx.log("warn", `Prompt placeholders without a value: ${missing.map((m) => `{{${m}}}`).join(", ")}`);
-  ctx.log("info", `Prompt: ${template.customized ? "your edited prompt" : "default prompt"} for ${ctx.nodeId}${additions.length ? ` + ${plural(additions.length, "project addition")}` : ""}`);
+  ctx.log("info", `Prompt: ${template.customized ? "your edited prompt" : "default prompt"} for ${ctx.nodeId}${additions.length ? ` + ${plural(additions.length, "project addition")}` : ""}${featureAdditions.length ? ` + ${plural(featureAdditions.length, "feature addition")}` : ""}`);
   await saveArtifact(ctx, services, "prompt", `${ctx.nodeId}-attempt${ctx.attempt}.md`, text, "text/markdown", `Prompt (attempt ${ctx.attempt})`);
   return text;
 }
@@ -171,6 +172,8 @@ export async function reportStep(
     vars: Record<string, string>;
     gate?: { judge?: (report: string) => ReportJudgement; notEnough: string; unknown: string };
     extra?: Record<string, unknown>;
+    /** Read selected design frames while writing a review; application code stays untouched. */
+    withFigma?: boolean;
     /** The agent may also run these project commands and edit the project (e.g. run and fix tests); otherwise it only reads and writes files. */
     allowedCommands?: string[];
   },
@@ -186,11 +189,12 @@ export async function reportStep(
     const result = await runAgentStep(ctx, services, {
       projectId: ctx.projectId,
       adapterId: runInputs(input).adapterId,
-      ...claudeAccountOf(input),
+      ...claudeAccountOf(input, services.stepAgent?.(ctx.runId, ctx.nodeId)),
       cwd: options.cwd,
       addDirs: [runFolder(services, ctx)],
       prompt,
       systemPrompt: systemPrompt(services),
+      ...(options.withFigma ? { withFigma: true } : {}),
       readOnly: false,
       ...(options.allowedCommands ? { allowedCommands: options.allowedCommands } : { filesOnly: true }),
       projectSettings: true,

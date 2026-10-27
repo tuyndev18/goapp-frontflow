@@ -15,7 +15,7 @@ export interface BackendOutput {
   gates: GateResult[];
 }
 
-/** The agent's report on the acceptance tests it ran (`acceptance-tests.md`), and what it changed fixing them. */
+/** The agent's report on the acceptance tests it ran (`acceptance-tests.md`, `e2e-tests.md`), and what it changed fixing them. */
 export interface AcceptanceRunOutput extends ReportOutput {
   verificationLevel: "business_verified" | "integration_verified" | "contract_only";
   filesChanged: string[];
@@ -52,20 +52,43 @@ export function verificationHandlers(services: NodeServices): Record<string, Nod
 
     "test.acceptance": {
       async execute(ctx, input) {
-        return acceptanceTests(ctx, services, input);
+        return acceptanceTests(ctx, services, input, {
+          fileName: "acceptance-tests.md",
+          label: "Acceptance tests",
+          vars: {},
+          notEnough: "Some acceptance tests still fail (see the report). Fix the BA specification, the design or the API and run this step again, or accept to continue (recorded as assumptions).",
+        });
+      },
+    },
+
+    // Its own session after the unit tests: the E2E run is long and needs the real environment,
+    // so it starts from a small context instead of the unit run's.
+    "test.e2e": {
+      async execute(ctx, input) {
+        return acceptanceTests(ctx, services, input, {
+          fileName: "e2e-tests.md",
+          label: "E2E tests",
+          vars: { unitTests: optionalUpstream<ReportOutput>(input, "C2.run_tests")?.reportPath ?? "Không có" },
+          notEnough: "Some E2E tests still fail (see the report). Fix what the report names (FE, test or environment) and run this step again, or accept to continue (recorded as assumptions).",
+        });
       },
     },
   };
 }
 
 /**
- * C2 (spec §14.3): the agent runs the feature's acceptance tests the project's way, fixes the
- * implementation and test-generation gaps it finds, and reports in `acceptance-tests.md`.
- * FrontFlow runs no test command itself; it only reads the report's conclusion (`Đạt` /
- * `Chưa đạt`), and anything but `Đạt` waits for the user. The fixes are checkpointed like any
- * code-changing step.
+ * C2 (spec §14.3): the agent runs the feature's acceptance tests the project's way — the unit
+ * tests, then the E2E auto-tests in a step of their own — fixes the implementation and
+ * test-generation gaps it finds, and reports in Markdown (`fileName`). FrontFlow runs no test
+ * command itself; it only reads the report's conclusion (`Đạt` / `Chưa đạt`), and anything but
+ * `Đạt` waits for the user. The fixes are checkpointed like any code-changing step.
  */
-async function acceptanceTests(ctx: NodeExecutionContext, services: NodeServices, input: NodeInput): Promise<NodeResult> {
+async function acceptanceTests(
+  ctx: NodeExecutionContext,
+  services: NodeServices,
+  input: NodeInput,
+  options: { fileName: string; label: string; vars: Record<string, string>; notEnough: string },
+): Promise<NodeResult> {
   const workspace = await workspaceOf(ctx, services, input);
   await requireGitProject(workspace);
   const profile = await profileOf(ctx, services, input);
@@ -73,17 +96,18 @@ async function acceptanceTests(ctx: NodeExecutionContext, services: NodeServices
   // Without the integration lane there is no backend check: the result can only be contract-level.
   const backend = optionalUpstream<BackendOutput>(input, "B2.check_backend") ?? { verificationLevel: "contract_only" as const };
 
+  ctx.log("info", "Saving a hidden snapshot of the project before the agent starts");
   const before = await checkpointRun(services, ctx, workspace, `frontflow: before ${ctx.nodeId}`);
   const result = await reportStep(ctx, services, input, {
-    fileName: "acceptance-tests.md",
-    label: "Acceptance tests",
+    fileName: options.fileName,
+    label: options.label,
     cwd: workspace.projectPath,
-    vars: { feature: featureOf(input), testDesign: tests.reportPath, opsGuide: opsGuideOf(input) },
+    vars: { feature: featureOf(input), testDesign: tests.reportPath, opsGuide: opsGuideOf(input), ...options.vars },
     allowedCommands: knownScripts(profile),
     gate: {
       judge: judgeAcceptance,
-      notEnough: "Some acceptance tests still fail (see the report). Fix the BA specification, the design or the API and run this step again, or accept to continue (recorded as assumptions).",
-      unknown: "The acceptance test report has no clear Đạt / Chưa đạt conclusion. Read it, then run the step again or accept to continue (recorded as assumptions).",
+      notEnough: options.notEnough,
+      unknown: "The test report has no clear Đạt / Chưa đạt conclusion. Read it, then run the step again or accept to continue (recorded as assumptions).",
     },
   });
   const checkpoint = await checkpointRun(services, ctx, workspace, `frontflow: ${ctx.nodeId}`);

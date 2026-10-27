@@ -2,7 +2,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { WorkflowDefinition } from "@frontflow/workflow-engine";
 import { createHarness, type Harness } from "./harness.js";
+
+/** Feature delivery as it was before v11: no UI vs BA review, the E2E tests in C2.run_tests. */
+function v10Of(definition: WorkflowDefinition): WorkflowDefinition {
+  const v10 = structuredClone(definition);
+  v10.version = 10;
+  v10.nodes = v10.nodes.filter((n) => n.id !== "B2.ba_ui_review" && n.id !== "C2.run_e2e");
+  const deps: Record<string, string[]> = { "B2.api_binding": ["A.review", "B1.implement_ui", "B2.ba_spec"], "C1.test_design": ["B2.ba_spec"], "C2.evidence_report": ["C2.run_tests"] };
+  for (const node of v10.nodes) node.dependencies = deps[node.id] ?? node.dependencies;
+  return v10;
+}
 
 /**
  * End-to-end run of the composed A/B/C workflow (spec §23.3 "Figma selection + API upload →
@@ -26,26 +37,26 @@ describe("feature delivery workflow", () => {
     let state = await engine.waitForRun(run.id);
     expect(state.run.status).toBe("waiting");
     expect(state.nodes.find((n) => n.nodeId === "A.api_contract")?.status).toBe("waiting_for_input");
-    expect(state.nodes.find((n) => n.nodeId === "C1.ba_spec")?.status).toBe("waiting_for_input");
+    expect(state.nodes.find((n) => n.nodeId === "B2.ba_spec")?.status).toBe("waiting_for_input");
     // No contract yet: the UI is already built from Figma; the review waits for the contract.
     expect(state.nodes.find((n) => n.nodeId === "B1.implement_ui")?.status).toBe("passed");
     expect(state.nodes.find((n) => n.nodeId === "A.review")?.status).toBe("waiting_for_dependency");
     await engine.provideInput(run.id, "A.api_contract", h.importApi() as unknown as Record<string, unknown>);
 
-    // Without the BA spec the feature is still implemented; only test design is pending (spec §11.1).
+    // The BA names the UI cases to handle: the API is integrated only once it is read.
     state = await engine.waitForRun(run.id);
-    expect(state.run.status).toBe("test_design_pending");
-    expect(state.nodes.find((n) => n.nodeId === "B2.ui_states")?.status).toBe("passed");
-    expect(state.nodes.find((n) => n.nodeId === "C2.generate_tests")?.status).toBe("waiting_for_dependency");
-    await engine.provideInput(run.id, "C1.ba_spec", h.importBa() as unknown as Record<string, unknown>);
+    expect(state.run.status).toBe("waiting");
+    expect(state.nodes.find((n) => n.nodeId === "A.review")?.status).toBe("passed");
+    expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.status).toBe("waiting_for_dependency");
+    await engine.provideInput(run.id, "B2.ba_spec", h.importBa() as unknown as Record<string, unknown>);
     state = await engine.waitForRun(run.id);
 
     const failed = state.nodes.filter((n) => !["passed", "skipped"].includes(n.status));
     expect(failed.map((n) => `${n.nodeId}:${n.status}:${n.error?.code ?? n.blockerSummary ?? ""}`)).toEqual([]);
-    // No backend URL → provider verification is skipped and the run is honest about it (spec §15.1).
+    // No backend check → the run is contract-only and honest about it (spec §15.1).
     expect(state.run.status).toBe("completed_with_assumptions");
     const byId = new Map(state.nodes.map((n) => [n.nodeId, n]));
-    expect(byId.get("B2.check_backend")?.output).toMatchObject({ verificationLevel: "contract_only" });
+    expect(byId.get("C2.run_tests")?.output).toMatchObject({ verificationLevel: "contract_only" });
     expect(state.nodes).toHaveLength(13);
 
     // The workflow files live in the tool's data for this project and run, never in the project.
@@ -61,16 +72,25 @@ describe("feature delivery workflow", () => {
     expect(byId.get("A.review")?.assumed).toBeFalsy();
     // Every AI step ran its editable prompt; the rendered prompts are kept as evidence.
     const promptArtifacts = h.db.artifacts.listByRun(run.id).filter((a) => a.kind === "prompt").map((a) => a.name);
-    expect(promptArtifacts).toEqual(expect.arrayContaining(["B1.implement_ui-attempt1.md", "A.review-attempt1.md", "B2.api_binding-attempt1.md", "C1.ba_spec-attempt1.md", "C1.test_design-attempt1.md"]));
+    expect(promptArtifacts).toEqual(expect.arrayContaining(["B1.implement_ui-attempt1.md", "A.review-attempt1.md", "B2.api_binding-attempt1.md", "B2.ba_spec-attempt1.md", "C1.test_design-attempt1.md"]));
     const prompt = (name: string) => h!.artifacts.readText(h!.db.artifacts.listByRun(run.id).find((a) => a.name === name)!.id);
     expect(prompt("A.review-attempt1.md")).toContain(join(runDir, "api-contract", "api.md"));
     expect(prompt("A.review-attempt1.md")).not.toContain("{{");
     expect(prompt("B2.api_binding-attempt1.md")).toContain(review.reportPath);
 
-    // Workflow C1 read the BA scenarios and designed the tests, both as Markdown reports.
-    const scenarios = byId.get("C1.ba_spec")?.output as { reportPath: string; report: string };
+    // B2 read the BA scenarios, which the integration follows and C1 designs the tests from, both as Markdown reports.
+    const scenarios = byId.get("B2.ba_spec")?.output as { reportPath: string; report: string };
     expect(scenarios.reportPath).toBe(join(runDir, "ba-scenarios.md"));
     expect(scenarios.report).toContain("BA-ORDER-001");
+    expect(prompt("B2.api_binding-attempt1.md")).toContain(scenarios.reportPath);
+    expect(prompt("B2.api_binding-attempt1.md")).not.toContain("{{");
+    // The UI vs BA review lists what the BA needs beyond the UI built from Figma; the integration builds it.
+    const baReview = byId.get("B2.ba_ui_review")?.output as { reportPath: string; report: string; verdict: string };
+    expect(baReview).toMatchObject({ reportPath: join(runDir, "ba-ui-review.md"), verdict: "enough" });
+    expect(prompt("B2.ba_ui_review-attempt1.md")).toContain(scenarios.reportPath);
+    expect(prompt("B2.ba_ui_review-attempt1.md")).not.toContain("{{");
+    expect(prompt("B2.api_binding-attempt1.md")).toContain(baReview.reportPath);
+    expect(prompt("C1.test_design-attempt1.md")).toContain(baReview.reportPath);
     const design = byId.get("C1.test_design")?.output as { reportPath: string; report: string; verdict: string };
     expect(design).toMatchObject({ reportPath: join(runDir, "test-design.md"), verdict: "enough" });
     expect(design.report).toContain("TC-BA-ORDER-002-01");
@@ -84,6 +104,11 @@ describe("feature delivery workflow", () => {
     // The agent ran the acceptance tests and reported them; FrontFlow only read its Đạt conclusion.
     expect(byId.get("C2.run_tests")?.output).toMatchObject({ reportPath: join(runDir, "acceptance-tests.md"), verdict: "enough", verificationLevel: "contract_only" });
     expect(readFileSync(join(runDir, "acceptance-tests.md"), "utf8")).toContain("TC-BA-ORDER-001-01: pass");
+    // The E2E tests ran in a step of their own, after the unit tests.
+    expect(byId.get("C2.run_e2e")?.output).toMatchObject({ reportPath: join(runDir, "e2e-tests.md"), verdict: "enough" });
+    expect(prompt("C2.run_e2e-attempt1.md")).toContain(join(runDir, "acceptance-tests.md"));
+    expect(evidence.report).toContain("E2E tests: Đạt");
+    expect(evidence.report).toContain("UI vs BA review: Đủ");
     // Every file FrontFlow keeps for the run is Markdown (or text: diffs, command output).
     expect(artifacts.filter((a) => a.mimeType === "application/json").map((a) => a.name)).toEqual([]);
     expect(h.artifacts.readText(artifacts.find((a) => a.kind === "figma_snapshot")!.id)).toContain("## Layers");
@@ -102,6 +127,58 @@ describe("feature delivery workflow", () => {
     // AI sessions are recorded for the Sessions screen / resume.
     expect(h.db.aiSessions.listByRun(run.id).length).toBeGreaterThanOrEqual(7);
     expect(h.db.aiSessions.listByRun(run.id).every((s) => s.status === "completed")).toBe(true);
+  }, 240_000);
+
+  it("finishes a run started from feature delivery v8, where the BA was read in C1 after the integration", async () => {
+    h = await createHarness({ aiFixture: "cancel-order" });
+    const v8 = v10Of(h.definition);
+    v8.version = 8;
+    for (const node of v8.nodes) {
+      if (node.id === "B2.ba_spec") Object.assign(node, { id: "C1.ba_spec", group: "C1" });
+      node.dependencies = node.dependencies.filter((d) => !(node.id === "B2.api_binding" && d === "B2.ba_spec")).map((d) => (d === "B2.ba_spec" ? "C1.ba_spec" : d));
+    }
+    const engine = h.newEngine();
+    const run = await engine.startRun({ projectId: h.projectId, definition: v8, inputs: h.createRunInputs({ importLater: true }) });
+    await engine.waitForRun(run.id);
+    await engine.provideInput(run.id, "A.api_contract", h.importApi() as unknown as Record<string, unknown>);
+    let state = await engine.waitForRun(run.id);
+    expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.status).toBe("passed");
+    await engine.provideInput(run.id, "C1.ba_spec", h.importBa() as unknown as Record<string, unknown>);
+    state = await engine.waitForRun(run.id);
+
+    const failed = state.nodes.filter((n) => !["passed", "skipped"].includes(n.status));
+    expect(failed.map((n) => `${n.nodeId}:${n.status}:${n.error?.code ?? n.blockerSummary ?? ""}`)).toEqual([]);
+    const names = h.db.artifacts.listByRun(run.id).map((a) => a.name);
+    // The old step runs the BA prompt under its new id; its scenarios still feed the test design.
+    expect(names).toEqual(expect.arrayContaining(["C1.ba_spec-attempt1.md", "C1.test_design-attempt1.md"]));
+  }, 240_000);
+
+  it("finishes a run started from feature delivery v9, with the backend check and the UI states as their own steps", async () => {
+    h = await createHarness({ aiFixture: "cancel-order" });
+    const v9 = v10Of(h.definition);
+    v9.version = 9;
+    const binding = v9.nodes.find((n) => n.id === "B2.api_binding");
+    if (!binding) throw new Error("no B2.api_binding");
+    v9.nodes.push(
+      { ...structuredClone(binding), id: "B2.check_backend", type: "integration.check_backend", mutation: false, config: {}, dependencies: ["B2.api_binding"] },
+      { ...structuredClone(binding), id: "B2.ui_states", type: "ai.bind_ui_states", dependencies: ["B2.check_backend"] },
+    );
+    for (const node of v9.nodes) node.dependencies = node.dependencies.map((d) => (node.id === "C2.generate_tests" && d === "B2.api_binding" ? "B2.ui_states" : d));
+    const engine = h.newEngine();
+    const run = await engine.startRun({ projectId: h.projectId, definition: v9, inputs: h.createRunInputs({ importLater: true }) });
+    await engine.waitForRun(run.id);
+    await engine.provideInput(run.id, "A.api_contract", h.importApi() as unknown as Record<string, unknown>);
+    await engine.waitForRun(run.id);
+    await engine.provideInput(run.id, "B2.ba_spec", h.importBa() as unknown as Record<string, unknown>);
+    const state = await engine.waitForRun(run.id);
+
+    const failed = state.nodes.filter((n) => !["passed", "skipped"].includes(n.status));
+    expect(failed.map((n) => `${n.nodeId}:${n.status}:${n.error?.code ?? n.blockerSummary ?? ""}`)).toEqual([]);
+    expect(state.nodes.find((n) => n.nodeId === "B2.check_backend")?.output).toMatchObject({ verificationLevel: "contract_only" });
+    // The retired step still runs its own prompt, kept for these runs.
+    const uiStates = h.db.artifacts.listByRun(run.id).find((a) => a.name === "B2.ui_states-attempt1.md");
+    if (!uiStates) throw new Error("no B2.ui_states prompt");
+    expect(h.artifacts.readText(uiStates.id)).toContain(join(h.dataDir, "projects", h.projectId, "runs", run.id, "files", "ba-scenarios.md"));
   }, 240_000);
 
   it("waits when the review does not conclude Đủ and continues with that review when gaps are accepted", async () => {
@@ -124,6 +201,15 @@ describe("feature delivery workflow", () => {
     expect((reviewNode?.output as { report: string }).report).toContain("Completed prompt");
     // Accepting reuses the review already written: the AI is not asked again.
     expect(reviewPrompts()).toBe(asked);
+    // The UI vs BA review has no conclusion either: it waits the same way.
+    const baReview = state.nodes.find((n) => n.nodeId === "B2.ba_ui_review");
+    expect(baReview).toMatchObject({ status: "waiting_for_input" });
+    expect((baReview?.output as { verdict: string }).verdict).toBe("unknown");
+    expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.status).toBe("waiting_for_dependency");
+
+    await engine.provideInput(run.id, "B2.ba_ui_review", { accept: true });
+    state = await engine.waitForRun(run.id);
+    expect(state.nodes.find((n) => n.nodeId === "B2.ba_ui_review")).toMatchObject({ status: "passed", assumed: true });
     expect(state.nodes.find((n) => n.nodeId === "B2.api_binding")?.status).toBe("passed");
   }, 240_000);
 

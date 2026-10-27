@@ -1,43 +1,15 @@
 import { useEffect, useState } from "react";
 import type { WorkflowDto, WorkflowSummaryDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
+import { EffortSwitch } from "../components/EffortSwitch.js";
+import { Menu } from "../components/Menu.js";
+import { EFFORTS as EFFORT_LEVELS, MODELS as MODEL_ALIASES, type Effort } from "../lib/agentModels.js";
 import { useApp } from "../store.js";
 
 const FEATURE_DELIVERY = "feature-delivery";
 
-/** Claude Code's `--model` aliases: each names the latest model of its family. */
-const MODELS = [
-  { value: "", label: "Default", hint: "Claude Code's own model setting." },
-  { value: "fable", label: "Fable", hint: "Fable: the most capable, for hard features." },
-  { value: "opus", label: "Opus", hint: "Opus: strong all-round coding." },
-  { value: "sonnet", label: "Sonnet", hint: "Sonnet: fast, a good balance for most steps." },
-  { value: "haiku", label: "Haiku", hint: "Haiku: the fastest and lightest." },
-];
-
-type Effort = "" | "low" | "medium" | "high" | "xhigh" | "max";
-
-/** Claude Code's `--effort` levels: how long the model thinks before acting. */
-const EFFORTS: Array<{ value: Effort; label: string; hint: string }> = [
-  { value: "", label: "Default", hint: "Claude Code's own effort setting." },
-  { value: "low", label: "Low", hint: "Low: quickest answers, least thinking." },
-  { value: "medium", label: "Medium", hint: "Medium: some thinking." },
-  { value: "high", label: "High", hint: "High: thinks things through." },
-  { value: "xhigh", label: "Extra high", hint: "Extra high: deep thinking, slower." },
-  { value: "max", label: "Max", hint: "Max: as much thinking as it takes; slowest, uses the most quota." },
-];
-
-/** One choice of a few, every label visible at once. */
-function ChoiceRow<T extends string>({ label, options, value, onChange }: { label: string; options: Array<{ value: T; label: string }>; value: T; onChange(value: T): void }) {
-  return (
-    <div className="ff-choice" role="radiogroup" aria-label={label}>
-      {options.map((o) => (
-        <button key={o.value || "default"} type="button" role="radio" aria-checked={value === o.value} className={`ff-choice-btn${value === o.value ? " ff-choice-active" : ""}`} onClick={() => onChange(o.value)}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+const MODELS = [{ value: "", label: "Default", hint: "Each step's own, set in the workflow" }, ...MODEL_ALIASES];
+const EFFORTS: Array<{ value: Effort; label: string; hint: string }> = [{ value: "", label: "Default", hint: "Each step's own, set in the workflow" }, ...EFFORT_LEVELS];
 
 export function NewFeatureRun({ projectId }: { projectId: string }) {
   const navigate = useApp((s) => s.navigate);
@@ -50,6 +22,8 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
   const [workflows, setWorkflows] = useState<WorkflowSummaryDto[]>();
   const [workflowId, setWorkflowId] = useState(FEATURE_DELIVERY);
   const [workflow, setWorkflow] = useState<WorkflowDto>();
+  const modelChoice = MODELS.find((m) => m.value === model);
+  const effortChoice = EFFORTS.find((e) => e.value === effort);
 
   useEffect(() => {
     api.invoke("workflows:list").then(
@@ -144,14 +118,32 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
           </div>
         ) : null}
         <div className="ff-field">
-          <span>Model</span>
-          <ChoiceRow label="Model" options={MODELS} value={model} onChange={setModel} />
-          <small className="ff-muted">{MODELS.find((m) => m.value === model)?.hint}</small>
-        </div>
-        <div className="ff-field">
-          <span>Effort</span>
-          <ChoiceRow<Effort> label="Effort" options={EFFORTS} value={effort} onChange={setEffort} />
-          <small className="ff-muted">{EFFORTS.find((x) => x.value === effort)?.hint} Every AI step of this feature runs Claude Code in its terminal with this model and effort.</small>
+          <span>Claude Code</span>
+          <div className="ff-agent-settings">
+            <div className="ff-agent-row">
+              <div className="ff-agent-text">
+                <span>Model</span>
+                <small>{modelChoice?.hint}</small>
+              </div>
+              <Menu
+                label="Switch model"
+                className="ff-btn ff-btn-small ff-agent-select"
+                trigger={<>{modelChoice?.label} ▾</>}
+                items={MODELS.map((m) => ({ label: m.label, hint: m.hint, checked: model === m.value, onSelect: () => setModel(m.value) }))}
+              />
+            </div>
+            <div className="ff-agent-row">
+              <div className="ff-agent-text">
+                <span id="ff-effort-label">Effort</span>
+                <small>{effortChoice?.hint}</small>
+              </div>
+              <div className="ff-agent-control">
+                <span className="ff-agent-value">{effortChoice?.label}</span>
+                <EffortSwitch levels={EFFORTS} value={effort} onChange={setEffort} labelledBy="ff-effort-label" />
+              </div>
+            </div>
+          </div>
+          <small className="ff-muted">Every AI step of this feature runs Claude Code in its terminal. Default uses the model and effort each step sets in the workflow (else Claude Code's own); a choice here applies to every AI step.</small>
         </div>
         {workflowId !== FEATURE_DELIVERY ? (
           workflow ? (
@@ -175,9 +167,9 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
             <strong>Read API contract</strong> — import it when it is ready (Markdown or OpenAPI); the built UI is then reviewed against it before the API is wired in
           </li>
           <li>
-            <strong>Read BA specification</strong> — import it any time; it only drives the acceptance tests and never blocks implementation
+            <strong>Read BA specification</strong> — import it any time; the API integration and UI states follow the UI cases it names, so they wait for it, and the acceptance tests are designed from it
           </li>
-          <li>FrontFlow drives AI agents in your project folder: UI first, then API review and integration, then the acceptance tests and the report; you can follow every step live</li>
+          <li>FrontFlow drives AI agents in your project folder: UI first, then API review, the BA and integration, then the acceptance tests and the report; you can follow every step live</li>
         </ol>
         )}
         <div className="ff-actions">

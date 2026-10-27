@@ -34,6 +34,8 @@ export interface WorkflowLibraryOptions {
   userDir: string;
   /** Extra checks of a workflow being saved (e.g. node types the host can run); returns the issues. */
   check?: (definition: WorkflowDefinition) => string[];
+  /** Upgrades a user workflow saved before a change of the host's steps; undefined when it is current. */
+  upgrade?: (definition: WorkflowDefinition) => WorkflowDefinition | undefined;
 }
 
 /**
@@ -127,12 +129,30 @@ export class WorkflowLibrary {
     const file = this.file(id);
     if (!existsSync(file)) return undefined;
     try {
-      const definition = loadWorkflowFile(file);
+      let definition = loadWorkflowFile(file);
       // The file name is the id: a hand-edited id inside the file must not shadow another workflow.
       if (definition.id !== id) return undefined;
+      const upgraded = this.upgradeOf(definition);
+      if (upgraded) {
+        // Saved once as a new version: runs started from the old one keep their graph.
+        writeFileSync(file, stringifyYaml(serializable(upgraded)));
+        definition = upgraded;
+      }
       return { definition, builtin: false, updatedAt: statSync(file).mtime.toISOString() };
     } catch (err) {
       console.warn("[workflows]", `${file}: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
+  }
+
+  /** The upgraded workflow, re-validated; undefined when it is current or the upgrade would not be valid (it is then left as it is). */
+  private upgradeOf(definition: WorkflowDefinition): WorkflowDefinition | undefined {
+    const upgraded = this.options.upgrade?.(definition);
+    if (!upgraded) return undefined;
+    try {
+      return parseWorkflowDefinition(serializable({ ...upgraded, version: definition.version + 1 }), definition.id);
+    } catch (err) {
+      console.warn("[workflows]", `${definition.id}: not upgraded: ${err instanceof Error ? err.message : String(err)}`);
       return undefined;
     }
   }

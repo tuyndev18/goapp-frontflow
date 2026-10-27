@@ -28,6 +28,16 @@ const RENAMED_STEPS: Record<string, string> = {
   "B.api_binding": "B2.api_binding",
   "B.ui_states": "B2.ui_states",
 };
+/**
+ * Built-in steps whose id changed in every workflow that has them (feature delivery v9: the BA is
+ * read in lane ③). Prompts, project additions and skills stored under the old id, and runs started
+ * before, resolve to the new one.
+ */
+export const MOVED_STEPS: Readonly<Record<string, string>> = { "C1.ba_spec": "B2.ba_spec" };
+
+export function currentStepId(nodeId: string): string {
+  return MOVED_STEPS[nodeId] ?? nodeId;
+}
 const IGNORED_DIRS = new Set([".git", "node_modules"]);
 const MAX_SKILL_FILES = 200;
 const MAX_DESCRIPTION = 1024;
@@ -58,7 +68,13 @@ export type SkillAssignments = Record<string, string[]>;
 
 /** A step of one workflow: node ids are only unique within their workflow. */
 export function stepKey(workflowId: string, nodeId: string): string {
-  return `${workflowId}/${nodeId}`;
+  return `${workflowId}/${currentStepId(nodeId)}`;
+}
+
+/** A stored {@link stepKey}, under the step's current id. */
+export function currentStepKey(key: string): string {
+  const slash = key.indexOf("/");
+  return slash < 0 ? key : stepKey(key.slice(0, slash), key.slice(slash + 1));
 }
 
 export interface SkillImportResult {
@@ -227,7 +243,7 @@ export class SkillLibrary implements SkillSource {
       for (const [stored, names] of Object.entries(nodes)) {
         // Before workflows could be chosen, keys were node ids of the one workflow (feature delivery);
         // steps of its v2 graph keep their skills under the step that replaced them.
-        const key = stored.includes("/") ? stored : stepKey(FEATURE_DELIVERY_WORKFLOW_ID, RENAMED_STEPS[stored] ?? stored);
+        const key = stored.includes("/") ? currentStepKey(stored) : stepKey(FEATURE_DELIVERY_WORKFLOW_ID, RENAMED_STEPS[stored] ?? stored);
         const list = Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [];
         out[key] = [...new Set([...(out[key] ?? []), ...list])];
       }

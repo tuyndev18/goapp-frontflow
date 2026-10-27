@@ -25,8 +25,8 @@ export function documentKindOf(type: string): DocumentKind | undefined {
 export type DocumentUpload = { importedAt: string; documents: Array<{ snapshotId: string; sourceUri?: string }> } | { importedAt: string; snapshotId: string; sourceUri?: string };
 
 /**
- * Input for A.api_contract (kind "api", reviewed against the built UI), C1.ba_spec (kind "ba",
- * only drives the acceptance tests) and C2.ops_guide (kind "ops", how to prepare test data, e.g. in
+ * Input for A.api_contract (kind "api", reviewed against the built UI), B2.ba_spec (kind "ba",
+ * followed by the API integration and the acceptance tests) and C2.ops_guide (kind "ops", how to prepare test data, e.g. in
  * the CMS). One upload holds one or more files and replaces the previous
  * upload: the step only reads the latest one. With `update`, a finished step runs again with the
  * new upload, and so do the steps after it (earlier uploads stay in the history).
@@ -78,7 +78,7 @@ export function DocumentImportPanel({ runId, nodeId, kind, update }: { runId: st
         {isApi ? (
           <FilePick label="API contract" hint="One or more files: Markdown or OpenAPI (.md, .yaml, .json)" accept=".md,.markdown,.yaml,.yml,.json" files={docs} onPick={(l) => void pick(l)} />
         ) : kind === "ba" ? (
-          <FilePick label="BA specification" hint="One or more Markdown files (.md) — used to generate acceptance tests" accept=".md,.markdown,text/markdown" files={docs} onPick={(l) => void pick(l)} />
+          <FilePick label="BA specification" hint="One or more Markdown files (.md) — the API integration, UI states and acceptance tests follow it" accept=".md,.markdown,text/markdown" files={docs} onPick={(l) => void pick(l)} />
         ) : (
           <FilePick
             label="Test operations guide"

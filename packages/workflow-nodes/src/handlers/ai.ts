@@ -9,7 +9,7 @@ import { featureOf, knownScripts, plural, profileOf, runInputs, saveArtifact, up
 import type { FigmaDesignOutput } from "./figma.js";
 import { checkpointRun, requireGitProject } from "./project.js";
 import type { ReadinessOutput } from "./readiness.js";
-import { opsGuideOf, type TestDesignOutput } from "./test-design.js";
+import { baReviewOf, baSpecOf, opsGuideOf, type TestDesignOutput } from "./test-design.js";
 
 export interface MutationOutput {
   sessionId: string;
@@ -46,11 +46,12 @@ export function aiHandlers(services: NodeServices): Record<string, NodeHandler> 
     "ai.api_integration": {
       async execute(ctx, input) {
         const review = upstream<ReadinessOutput>(input, "A.review");
-        ctx.log("info", `Binding the API to the UI following the review ${review.reportPath}`);
-        return mutationStep(ctx, services, input, { vars: { apiContract: fileList(review.apiContractFiles), review: review.reportPath } });
+        ctx.log("info", `Integrating the API and the UI states following the review ${review.reportPath}`);
+        return mutationStep(ctx, services, input, { vars: { apiContract: fileList(review.apiContractFiles), review: review.reportPath, ...baVars(input) } });
       },
     },
 
+    // Retired in feature delivery v10 (B2.api_binding does it); kept for runs and user workflows that still have it.
     "ai.bind_ui_states": {
       async execute(ctx, input) {
         const review = upstream<ReadinessOutput>(input, "A.review");
@@ -59,6 +60,7 @@ export function aiHandlers(services: NodeServices): Record<string, NodeHandler> 
           vars: {
             apiContract: fileList(review.apiContractFiles),
             review: review.reportPath,
+            ...baVars(input),
             backendNote: backend.verificationLevel === "contract_only" ? "Note: the backend runtime is not available; only contract-level verification is possible." : "",
           },
         });
@@ -73,6 +75,14 @@ export function aiHandlers(services: NodeServices): Record<string, NodeHandler> 
       },
     },
   };
+}
+
+/** The BA the integration steps follow: the scenarios and UI cases B2.ba_spec read, the documents, and what the UI vs BA review asks to build. */
+function baVars(input: NodeInput): { baSpec: string; baScenarios: string; baReview: string } {
+  const ba = baSpecOf(input);
+  const baReview = baReviewOf(input);
+  // Runs started before feature delivery v9 integrate the API before the BA is read.
+  return ba ? { baSpec: fileList(ba.baSpecFiles), baScenarios: ba.reportPath, baReview } : { baSpec: "Không có", baScenarios: "Không có", baReview };
 }
 
 /**
@@ -94,11 +104,12 @@ export async function mutationStep(
 
   const prompt = await stepPrompt(ctx, services, { feature: featureOf(input), ...options.vars });
 
+  ctx.log("info", "Saving a hidden snapshot of the project before the agent starts");
   const before = await checkpointRun(services, ctx, workspace, `frontflow: before ${ctx.nodeId}`);
   const result = await runAgentStep(ctx, services, {
     projectId: ctx.projectId,
     adapterId: runInputs(input).adapterId,
-    ...claudeAccountOf(input),
+    ...claudeAccountOf(input, services.stepAgent?.(ctx.runId, ctx.nodeId)),
     cwd: workspace.projectPath,
     // The run's workflow files (review, test design) are read from the tool's data.
     addDirs: [runFolder(services, ctx)],

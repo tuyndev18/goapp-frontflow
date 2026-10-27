@@ -1,9 +1,12 @@
 import { nowIso, type SourceSnapshot } from "@frontflow/domain";
 import type { NodeHandler } from "@frontflow/workflow-engine";
 import { fileList, latestUpload, lineCount, loadSnapshot, reportScore, reportStep, writeRunDocuments, type ReportJudgement, type ReportOutput } from "../ai-step.js";
+import { untrusted } from "../prompts.js";
 import type { ImportedApiContract, ImportedBatch, NodeServices } from "../services.js";
 import { featureOf, optionalUpstream, runInputs, upstream, workspaceOf } from "../util.js";
 import type { MutationOutput } from "./ai.js";
+import type { FigmaDesignOutput } from "./figma.js";
+import type { BaSpecOutput } from "./test-design.js";
 
 export interface ApiContractOutput {
   /** The documents of the latest upload. */
@@ -39,6 +42,11 @@ export function judgeCoverage(report: string): ReportJudgement {
  * short Markdown report that the next steps' agents read. FrontFlow only reads its coverage line
  * (`Đáp ứng: NN%`): below MIN_REVIEW_SCORE it stops here until the user imports a newer contract
  * or accepts the gaps.
+ *
+ * Lane B2 reviews the same UI against the BA (`readiness.ba_ui_review`): the BA decides behaviour
+ * (flow, validation, forms, states, business rules); Figma supplies presentation and copy unless
+ * BA explicitly mandates exact wording. Equivalent copy and BA silence are not conflicts. It waits only while the
+ * two conflict (`Chưa đủ`); what the BA needs beyond the UI is for B2.api_binding to build.
  */
 export function readinessHandlers(services: NodeServices): Record<string, NodeHandler> {
   return {
@@ -88,6 +96,34 @@ export function readinessHandlers(services: NodeServices): Record<string, NodeHa
             unknown: "Read the review, then run the step again or accept to continue (recorded as assumptions).",
           },
           extra: { apiContractFiles: contract.apiContractFiles },
+        });
+      },
+    },
+
+    // The UI is built from Figma, which shows less than the BA defines: what the BA needs beyond it
+    // is listed here, before the integration builds it, instead of surfacing as failing tests.
+    "readiness.ba_ui_review": {
+      async execute(ctx, input) {
+        const spec = upstream<BaSpecOutput>(input, "B2.ba_spec");
+        const ui = optionalUpstream<MutationOutput>(input, "B1.implement_ui");
+        const design = optionalUpstream<FigmaDesignOutput>(input, "B1.figma_scope");
+        const { projectPath } = await workspaceOf(ctx, services, input);
+        return reportStep(ctx, services, input, {
+          fileName: "ba-ui-review.md",
+          label: "UI vs BA review",
+          withFigma: true,
+          cwd: projectPath,
+          vars: {
+            feature: featureOf(input),
+            baSpec: fileList(spec.baSpecFiles),
+            baScenarios: spec.reportPath,
+            uiFiles: ui?.filesChanged.length ? ui.filesChanged.map((f) => `\n  - ${f}`).join("") : "the UI of this feature in the project (find it from the feature name)",
+            figmaFrames: design?.nodes.length ? untrusted("figma-frames", `${design.prompt}\n${design.nodes.map((n) => `- ${n.name} (${n.nodeId})`).join("\n")}`) : "Không có",
+          },
+          gate: {
+            notEnough: "The BA and the UI built from Figma conflict (see “Mâu thuẫn cần chốt” in the review). Accept to follow the choices the review proposes, or write your decisions as a feature prompt addition of this step (or import a newer BA) and run it again.",
+            unknown: "The review has no clear Đủ / Chưa đủ conclusion. Read it, then run the step again or accept to continue (recorded as assumptions).",
+          },
         });
       },
     },

@@ -127,7 +127,7 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     if (shots) await page.screenshot({ path: join(shots, "1-import-api.png") });
     await page.getByRole("button", { name: "Import & continue" }).click();
 
-    // Step C1.ba_spec asks for the BA specification; it only drives the acceptance tests.
+    // Step B2.ba_spec asks for the BA specification; the API integration and the acceptance tests follow it.
     await step(page, "Read BA specification").click();
     await expect(page.getByText("Needs your input.")).toBeVisible({ timeout: 30_000 });
     await page.getByLabel("BA specification", { exact: true }).setInputFiles(join(FIXTURES, "alignment/cancel-order/ba.md"));

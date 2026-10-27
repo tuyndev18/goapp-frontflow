@@ -15,6 +15,7 @@ import {
   type EdgeProps,
   type Node,
   type NodeProps,
+  type Viewport,
 } from "@xyflow/react";
 import type { NodeRun } from "@frontflow/domain";
 import { visualStateForNode } from "@frontflow/ui-components";
@@ -43,6 +44,9 @@ const LANE_GAP = 26;
 export const FIT = { padding: 0.04, minZoom: 0.4, maxZoom: 1 } as const;
 /** Below this the step names are too small to read: the canvas pans instead of shrinking further. */
 const READABLE_ZOOM = 0.75;
+/** Following the live steps shows them at full size when the window allows, with this screen margin. */
+const FOLLOW_ZOOM = 1;
+const FOLLOW_PAD = 32;
 
 // Edge colours are SVG attributes (arrow markers), so they are literal hex rather than CSS variables.
 const EDGE = { done: "#4cb782", active: "#26b5ce", waiting: "#f2994a", failed: "#eb5757", idle: "#8a8f98" } as const;
@@ -81,9 +85,10 @@ interface FlowNodeData extends Record<string, unknown> {
 const CanvasContext = createContext<{ runId: string; onSelect(id: string): void }>({ runId: "", onSelect: () => {} });
 
 /**
- * n8n-style workflow canvas beside the run panel, with manual actions on every step. It shows the
- * whole workflow when that stays readable; otherwise it keeps a readable zoom, centres the step
- * that matters (`focus`: the open one, else where the run waits or works) and the minimap shows the rest.
+ * n8n-style workflow canvas beside the run panel, with manual actions on every step. While the run
+ * has live steps (`live`: waiting for the user, working, failed — most urgent first) the canvas
+ * follows them, zoomed in with their neighbours; panning or zooming by hand stops following until
+ * the user turns it back on. Without live steps it shows the whole workflow when that stays readable.
  */
 export function GraphView({
   runId,
@@ -91,7 +96,7 @@ export function GraphView({
   latest,
   lastByNode,
   selected,
-  focus,
+  live,
   now,
   onSelect,
 }: {
@@ -100,11 +105,13 @@ export function GraphView({
   latest: Map<string, NodeRun>;
   lastByNode: Map<string, ActivityLine>;
   selected?: string | undefined;
-  focus?: string | undefined;
+  live: string[];
   now: number;
   onSelect(id: string): void;
 }) {
   const { resolved: colorMode } = useTheme();
+  const [follow, setFollow] = useState(true);
+  const pause = () => setFollow(false);
   const workflowLanes = useMemo(() => lanesOf(graph.lanes, graph.nodes), [graph.lanes, graph.nodes]);
   const { positions, lanes, width: graphWidth } = useMemo(() => layout(graph, workflowLanes), [graph, workflowLanes]);
   const graphHeight = Math.max(0, ...lanes.map((l) => l.y + l.height));
@@ -211,9 +218,27 @@ export function GraphView({
             decision
           </span>
         </div>
+        <button
+          type="button"
+          className={`ff-btn ff-btn-small ff-canvas-follow${follow ? " ff-btn-active" : ""}`}
+          aria-pressed={follow}
+          title={follow ? "The canvas zooms to the step that is running or waiting for you. Pan or zoom to look around." : "Zoom back to the step that is running or waiting for you, and keep following it"}
+          onClick={() => setFollow(!follow)}
+        >
+          {follow ? "◉ Following live step" : "◎ Follow live step"}
+        </button>
       </header>
       <CanvasContext.Provider value={{ runId, onSelect }}>
-        <div className="ff-graph">
+        <div
+          className="ff-graph"
+          // The minimap moves the canvas without a pan event: dragging or scrolling it is looking around too.
+          onPointerDownCapture={(e) => {
+            if ((e.target as Element).closest(".react-flow__minimap")) pause();
+          }}
+          onWheelCapture={(e) => {
+            if ((e.target as Element).closest(".react-flow__minimap")) pause();
+          }}
+        >
           <ReactFlow
             colorMode={colorMode}
             nodes={nodes}
@@ -222,6 +247,10 @@ export function GraphView({
             edgeTypes={edgeTypes}
             onNodeClick={(_, n) => {
               if (n.type === "step") onSelect(n.id);
+            }}
+            // Only the user's own moves carry an event; the canvas's moves to the live steps have none.
+            onMoveStart={(event) => {
+              if (event) pause();
             }}
             nodesDraggable={false}
             nodesConnectable={false}
@@ -234,7 +263,7 @@ export function GraphView({
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={24} />
-            <Controls position="bottom-right" showInteractive={false} fitViewOptions={FIT} />
+            <Controls position="bottom-right" showInteractive={false} fitViewOptions={FIT} onZoomIn={pause} onZoomOut={pause} onFitView={pause} />
             <LaneHeaders lanes={lanes} />
             <MiniMap
               className="ff-minimap"
@@ -245,7 +274,17 @@ export function GraphView({
               nodeColor={(n) => (n.type === "lane" ? "transparent" : EDGE[outputKind((n.data as FlowNodeData).nodeRun?.status)])}
               nodeStrokeWidth={0}
             />
-            <AutoView layoutKey={`${graphWidth}x${lanes.length}:${graph.nodes.length}`} width={graphWidth} height={graphHeight} positions={positions} focus={focus} />
+            <AutoView
+              layoutKey={`${graphWidth}x${lanes.length}:${graph.nodes.length}`}
+              width={graphWidth}
+              height={graphHeight}
+              positions={positions}
+              edges={graph.edges}
+              live={live}
+              selected={selected}
+              follow={follow}
+              onPause={pause}
+            />
           </ReactFlow>
         </div>
       </CanvasContext.Provider>
@@ -254,50 +293,80 @@ export function GraphView({
 }
 
 /**
- * Keeps the canvas readable: on open, on resize and when the graph changes it fits the whole
- * workflow if that is readable, else it shows the focus step (or the start) at a readable zoom.
- * When the focus moves to a step out of view, it pans there. Zooming and panning by hand stay free.
+ * Moves the canvas for the user. Following: on open, on resize and whenever the live steps change it
+ * zooms to them (with the steps right before and after, while that stays readable). Not following,
+ * or with no live step: it fits the whole workflow if that is readable, else shows its start.
+ * Opening a step out of view pans there; that step not being live stops following.
  */
 function AutoView({
   layoutKey,
   width,
   height,
   positions,
-  focus,
+  edges,
+  live,
+  selected,
+  follow,
+  onPause,
 }: {
   layoutKey: string;
   width: number;
   height: number;
   positions: Map<string, { x: number; y: number }>;
-  focus: string | undefined;
+  edges: RunStateDto["graph"]["edges"];
+  live: string[];
+  selected: string | undefined;
+  follow: boolean;
+  onPause(): void;
 }) {
-  const { fitView, setCenter, getViewport } = useReactFlow();
+  const { fitView, setCenter, setViewport, getViewport } = useReactFlow();
   const w = useStore((s) => s.width);
   const h = useStore((s) => s.height);
+  const liveKey = live.join(",");
 
-  useEffect(() => {
+  /** The view that fits these steps, clear of the lane titles pinned over the canvas's left edge. */
+  function viewOf(ids: string[]): Viewport | undefined {
+    const at = ids.flatMap((id) => positions.get(id) ?? []);
+    if (!at.length) return undefined;
+    const x0 = Math.min(...at.map((p) => p.x));
+    const y0 = Math.min(...at.map((p) => p.y));
+    const bw = Math.max(...at.map((p) => p.x)) + NODE_W - x0;
+    const bh = Math.max(...at.map((p) => p.y)) + NODE_H - y0;
+    const zoom = Math.max(FIT.minZoom, Math.min(FOLLOW_ZOOM, (w - 2 * FOLLOW_PAD) / (bw + LANE_LABEL_W), (h - 2 * FOLLOW_PAD) / bh));
+    const left = LANE_LABEL_W * zoom;
+    return { zoom, x: left + (w - left - bw * zoom) / 2 - x0 * zoom, y: (h - bh * zoom) / 2 - y0 * zoom };
+  }
+
+  function show(duration: number) {
     if (!w || !h) return;
-    const fitZoom = Math.min(w / width, h / height) * 0.96;
-    if (fitZoom >= READABLE_ZOOM) {
-      void fitView(FIT);
-      return;
+    if (follow && live.length) {
+      const around = [...live, ...edges.flatMap((e) => (live.includes(e.source) ? [e.target] : live.includes(e.target) ? [e.source] : []))];
+      // Fewer steps until it stays readable: the live ones with their neighbours, the live ones, the most urgent one.
+      const views = [around, live, live.slice(0, 1)].flatMap((ids) => viewOf(ids) ?? []);
+      const view = views.find((v) => v.zoom >= READABLE_ZOOM) ?? views.at(-1);
+      if (view) return void setViewport(view, { duration });
     }
-    const at = focus ? positions.get(focus) : undefined;
-    // Without a focus, start where the workflow starts (its top-left corner).
-    const x = at ? at.x + NODE_W / 2 : w / 2 / READABLE_ZOOM;
-    const y = at ? at.y + NODE_H / 2 : h / 2 / READABLE_ZOOM;
-    void setCenter(x, y, { zoom: READABLE_ZOOM });
-  }, [w, h, layoutKey]);
+    if (Math.min(w / width, h / height) * 0.96 >= READABLE_ZOOM) return void fitView({ ...FIT, duration });
+    // Too big to read whole: start where the workflow starts (its top-left corner).
+    void setCenter(w / 2 / READABLE_ZOOM, h / 2 / READABLE_ZOOM, { zoom: READABLE_ZOOM, duration });
+  }
+
+  useEffect(() => show(0), [w, h, layoutKey]);
+  // Stopping following leaves the canvas where the user took it.
+  useEffect(() => {
+    if (follow) show(matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 400);
+  }, [liveKey, follow]);
 
   useEffect(() => {
-    const at = focus ? positions.get(focus) : undefined;
-    if (!at || !w || !h) return;
+    const at = selected ? positions.get(selected) : undefined;
+    if (!selected || !at || !w || !h) return;
     const { x, y, zoom } = getViewport();
     const left = at.x * zoom + x;
     const top = at.y * zoom + y;
     if (left >= 0 && top >= 0 && left + NODE_W * zoom <= w && top + NODE_H * zoom <= h) return;
-    void setCenter(at.x + NODE_W / 2, at.y + NODE_H / 2, { zoom, duration: 300 });
-  }, [focus]);
+    if (!live.includes(selected)) onPause();
+    void setCenter(at.x + NODE_W / 2, at.y + NODE_H / 2, { zoom: Math.max(zoom, READABLE_ZOOM), duration: 300 });
+  }, [selected]);
   return null;
 }
 
@@ -349,7 +418,7 @@ const StepNode = memo(function StepNode({ id, data }: NodeProps<Node<FlowNodeDat
 
   return (
     <div
-      className={`ff-gnode ff-gnode-${spec.tone}${data.selected ? " ff-gnode-selected" : ""}${look.input ? " ff-gnode-input" : ""}`}
+      className={`ff-gnode ff-gnode-${spec.tone}${running ? " ff-gnode-live" : ""}${data.selected ? " ff-gnode-selected" : ""}${look.input ? " ff-gnode-input" : ""}`}
       style={{ width: NODE_W, height: NODE_H, "--lane": data.color } as CSSProperties}
       title={tooltip}
     >

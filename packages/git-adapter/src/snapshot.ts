@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { copyFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { newId, nowIso, type GitCheckpoint } from "@frontflow/domain";
 import { GitCli, type GitCliOptions } from "./git-cli.js";
@@ -31,7 +31,10 @@ export async function snapshotCheckpoint(input: {
   const indexEnv = { GIT_INDEX_FILE: index };
   try {
     const parent = (await git.run(["rev-parse", "--verify", "--quiet", ref]).catch(() => undefined))?.stdout.trim() || (await git.headSha());
-    await git.run(["read-tree", "HEAD"], { env: indexEnv });
+    // Start from a copy of the user's index: its stat cache lets `add -A` skip reading unchanged
+    // files, which on a cold disk (and with on-access virus scanning) can take most of a minute.
+    // Files the user marked assume-unchanged keep their indexed content, as in their own commits.
+    if (!copyIndex(path.join(gitDir, "index"), index)) await git.run(["read-tree", "HEAD"], { env: indexEnv });
     await git.run(["add", "-A", "--", "."], { env: indexEnv });
     const tree = (await git.run(["write-tree"], { env: indexEnv })).stdout.trim();
     const trailer = input.nodeRunId ? `FrontFlow-Run: ${input.runId}\nFrontFlow-Node-Run: ${input.nodeRunId}` : `FrontFlow-Run: ${input.runId}`;
@@ -54,6 +57,16 @@ export async function snapshotCheckpoint(input: {
   } finally {
     rmSync(index, { force: true });
     rmSync(`${index}.lock`, { force: true });
+  }
+}
+
+function copyIndex(from: string, to: string): boolean {
+  try {
+    copyFileSync(from, to);
+    return true;
+  } catch {
+    // No index yet, or it is being rewritten: build the temporary one from HEAD instead.
+    return false;
   }
 }
 

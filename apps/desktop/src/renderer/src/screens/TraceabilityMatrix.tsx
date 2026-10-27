@@ -8,7 +8,7 @@ import { FileActions } from "../components/FileActions.js";
 
 /**
  * Spec §20.1 #6: the run's Markdown reports — the UI vs API review (workflow A), the BA scenarios
- * and test design (C1), the acceptance tests and the evidence report (C2) — one tab each.
+ * (B2), the test design (C1), the acceptance tests and the evidence report (C2) — one tab each.
  */
 export function TraceabilityMatrix({ projectId, runId }: { projectId: string; runId: string }) {
   const navigate = useApp((s) => s.navigate);

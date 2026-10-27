@@ -1,6 +1,7 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { loadWorkflowYaml, parseWorkflowDefinition } from "@frontflow/workflow-engine";
-import { checkWorkflowNodes, newNodeSpec, NODE_TYPES, stepsWithoutPrompt } from "../src/node-types.js";
+import { FEATURE_DELIVERY_WORKFLOW_ID, loadBuiltinWorkflows, loadWorkflowYaml, parseWorkflowDefinition, type WorkflowDefinition } from "@frontflow/workflow-engine";
+import { checkWorkflowNodes, newNodeSpec, NODE_TYPES, stepsWithoutPrompt, upgradeWorkflow } from "../src/node-types.js";
 
 const workflow = (nodes: string) => loadWorkflowYaml(`id: w\nname: W\nnodes:\n${nodes}`);
 
@@ -27,6 +28,14 @@ describe("checkWorkflowNodes", () => {
     ).toEqual([]);
   });
 
+  it("checks the model and effort a step sets for its agent", () => {
+    expect(checkWorkflowNodes(workflow("  - { id: a, type: ai.prompt, config: { model: claude-sonnet-5-5, effort: xhigh } }\n"))).toEqual([]);
+    expect(checkWorkflowNodes(workflow("  - { id: a, type: ai.prompt, config: { model: 'opus --dangerous', effort: extreme } }\n"))).toEqual([
+      'node "a": config.model must be a model alias or id',
+      'node "a": config.effort must be one of low, medium, high, xhigh, max',
+    ]);
+  });
+
   it("lists every built-in step type once, with a unique id", () => {
     const ids = NODE_TYPES.flatMap((t) => (t.fixedId ? [t.fixedId] : []));
     expect(new Set(ids).size).toBe(ids.length);
@@ -51,6 +60,39 @@ describe("newNodeSpec", () => {
     expect(checkWorkflowNodes(def)).toEqual([]);
     expect(def.nodes[1]).toMatchObject({ label: "QA", mutation: false, retryPolicy: { maxAttempts: 1 } });
     expect(() => newNodeSpec("nope", { id: "x", group: "main" }, builtin)).toThrow(/Unknown step type/);
+  });
+});
+
+describe("upgradeWorkflow", () => {
+  const builtin = loadBuiltinWorkflows(fileURLToPath(new URL("../../../workflows", import.meta.url))).find((d) => d.id === FEATURE_DELIVERY_WORKFLOW_ID);
+  if (!builtin) throw new Error("no built-in workflow");
+  const shape = (def: WorkflowDefinition) => def.nodes.map((n) => [n.id, n.group, n.dependencies]).sort();
+
+  it("moves the BA step of a workflow cloned from feature delivery v8 into lane ③", () => {
+    // The clone as it was saved before v9: the BA read in C1, the API bound without it.
+    const v8 = structuredClone(builtin);
+    for (const node of v8.nodes) {
+      if (node.id === "B2.ba_spec") Object.assign(node, { id: "C1.ba_spec", group: "C1" });
+      node.dependencies = node.dependencies.filter((d) => !(node.id === "B2.api_binding" && d === "B2.ba_spec")).map((d) => (d === "B2.ba_spec" ? "C1.ba_spec" : d));
+    }
+    expect(checkWorkflowNodes(v8)).not.toEqual([]);
+    const upgraded = upgradeWorkflow(v8);
+    if (!upgraded) throw new Error("not upgraded");
+    expect(shape(upgraded)).toEqual(shape(builtin));
+    expect(checkWorkflowNodes(upgraded)).toEqual([]);
+  });
+
+  it("finds every built-in step type in the built-in workflow, except the retired ones", () => {
+    const ids = new Set(builtin.nodes.map((n) => n.id));
+    const builtinTypes = NODE_TYPES.filter((t) => t.fixedId);
+    expect(builtinTypes.filter((t) => !t.retired && !ids.has(t.fixedId ?? "")).map((t) => t.type)).toEqual([]);
+    expect(builtinTypes.filter((t) => t.retired).map((t) => t.fixedId)).toEqual(["B2.check_backend", "B2.ui_states"]);
+    expect(builtinTypes.filter((t) => t.retired && ids.has(t.fixedId ?? ""))).toEqual([]);
+  });
+
+  it("leaves current workflows and generic steps alone", () => {
+    expect(upgradeWorkflow(builtin)).toBeUndefined();
+    expect(upgradeWorkflow(workflow("  - { id: C1.ba_spec, type: ai.prompt }\n"))).toBeUndefined();
   });
 });
 

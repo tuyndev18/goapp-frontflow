@@ -61,4 +61,25 @@ describe("snapshotCheckpoint (runs in the project folder)", () => {
     expect(() => git(repo, "rev-parse", "--verify", "--quiet", snapshotRef("run_1"))).toThrow();
     expect(git(repo, "branch", "--list").trim()).toBe("* main");
   });
+
+  it("snapshots the working tree, not what the user staged, starting from the user's index", async () => {
+    const head = git(repo, "rev-parse", "HEAD").trim();
+    fs.writeFileSync(path.join(repo, "old.ts"), "export const o = 1;\n");
+    git(repo, "add", "old.ts");
+    git(repo, "commit", "-q", "-m", "old");
+    fs.writeFileSync(path.join(repo, "app.ts"), "export const a = 2;\n");
+    git(repo, "add", "app.ts");
+    fs.writeFileSync(path.join(repo, "app.ts"), "export const a = 3;\n"); // staged 2, working tree 3
+    fs.rmSync(path.join(repo, "old.ts"));
+    fs.writeFileSync(path.join(repo, "new.ts"), "export const b = 1;\n");
+    const indexBefore = fs.readFileSync(path.join(repo, ".git", "index"));
+
+    const snap = await snapshotCheckpoint({ repoPath: repo, runId: "run_1", message: "frontflow: step", baseSha: head });
+
+    expect(git(repo, "show", `${snap.headSha}:app.ts`)).toBe("export const a = 3;\n");
+    expect(git(repo, "ls-tree", "-r", "--name-only", snap.headSha).split("\n").filter(Boolean).sort()).toEqual([".gitignore", "app.ts", "new.ts"]);
+    expect(fs.readFileSync(path.join(repo, ".git", "index")).equals(indexBefore)).toBe(true);
+    expect(git(repo, "show", ":app.ts")).toBe("export const a = 2;\n");
+    expect(fs.readdirSync(path.join(repo, ".git")).filter((f) => f.startsWith("frontflow-"))).toEqual([]);
+  });
 });

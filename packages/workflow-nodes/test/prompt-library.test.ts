@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { FEATURE_DELIVERY_WORKFLOW_ID, loadBuiltinWorkflows } from "@frontflow/workflow-engine";
 import { additionsPrompt, ProjectPromptStore, PromptLibrary, promptPlaceholders, renderPrompt, SYSTEM_PROMPT_NAME } from "../src/prompt-library.js";
-import { stepsWithoutPrompt } from "../src/node-types.js";
+import { NODE_TYPES, stepsWithoutPrompt } from "../src/node-types.js";
 
 const WORKFLOWS = fileURLToPath(new URL("../../../workflows", import.meta.url));
 const FD = FEATURE_DELIVERY_WORKFLOW_ID;
@@ -18,9 +18,12 @@ describe("PromptLibrary", () => {
     const [definition] = loadBuiltinWorkflows(WORKFLOWS);
     if (!definition) throw new Error("no built-in workflow");
     const aiSteps = definition.nodes.filter((n) => n.config?.["ai"] === true).map((n) => n.id);
-    expect(lib.list(FD)).toEqual([...aiSteps].sort());
+    // Retired steps keep their prompt for the runs and cloned workflows that still have them.
+    const retired = NODE_TYPES.filter((t) => t.retired && t.prompt && t.fixedId).map((t) => t.fixedId ?? "");
+    expect(lib.list(FD)).toEqual([...aiSteps, ...retired].sort());
     for (const name of lib.list(FD)) expect(lib.get(name, FD).text.trim().length).toBeGreaterThan(50);
-    expect(lib.get(SYSTEM_PROMPT_NAME).text.trim().length).toBeGreaterThan(50);
+    // Shipped empty: each step's prompt carries what it needs; an edit is appended to every AI step.
+    expect(lib.get(SYSTEM_PROMPT_NAME).text.trim()).toBe("");
     expect(stepsWithoutPrompt(definition, lib)).toEqual([]);
   });
 
@@ -60,6 +63,22 @@ describe("PromptLibrary", () => {
     expect(existsSync(path.join(userDir, "A.review.md"))).toBe(false);
   });
 
+  it("keeps the edits of a moved step under its new id, in every workflow and for runs started before", () => {
+    const userDir = path.join(tmp(), "prompts");
+    mkdirSync(path.join(userDir, FD), { recursive: true });
+    mkdirSync(path.join(userDir, "my-delivery"), { recursive: true });
+    writeFileSync(path.join(userDir, FD, "C1.ba_spec.md"), "Old BA edit\n");
+    writeFileSync(path.join(userDir, "my-delivery", "C1.ba_spec.md"), "Clone BA edit\n");
+    const lib = library(userDir);
+    lib.migrateLegacyEdits(FD);
+    expect(lib.get("B2.ba_spec", FD)).toMatchObject({ text: "Old BA edit\n", customized: true });
+    expect(lib.get("B2.ba_spec", "my-delivery").text).toBe("Clone BA edit\n");
+    expect(existsSync(path.join(userDir, FD, "C1.ba_spec.md"))).toBe(false);
+    // A run started before still finds its step's prompt.
+    expect(lib.get("C1.ba_spec", FD).text).toBe("Old BA edit\n");
+    expect(lib.reset("C1.ba_spec", FD).text).toBe(lib.get("B2.ba_spec", FD).defaultText);
+  });
+
   it("rejects names that could escape the prompt folders", () => {
     const lib = library();
     expect(() => lib.get("../secrets", FD)).toThrow(/Invalid prompt name/);
@@ -92,6 +111,17 @@ describe("ProjectPromptStore", () => {
     expect(store.all("p1")).toEqual({});
   });
 
+  it("keeps the additions of a moved step under its new id", () => {
+    const dir = tmp();
+    const file = path.join(dir, "p1", "prompt-additions.json");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({ steps: { [`${FD}/C1.ba_spec`]: [{ id: "pa_1", title: "", text: "Read the annex too.", enabled: true }] } }));
+    const store = new ProjectPromptStore(() => file);
+    expect(Object.keys(store.all("p1"))).toEqual([`${FD}/B2.ba_spec`]);
+    expect(store.list("p1", FD, "B2.ba_spec")).toEqual([{ id: "pa_1", title: "", text: "Read the annex too.", enabled: true }]);
+    expect(store.list("p1", FD, "C1.ba_spec")).toHaveLength(1);
+  });
+
   it("appends only the enabled additions after the step prompt", () => {
     expect(additionsPrompt([])).toBe("");
     expect(
@@ -101,6 +131,15 @@ describe("ProjectPromptStore", () => {
         { id: "c", title: "", text: "No inline styles.", enabled: true },
       ]),
     ).toBe("## Additional instructions for this project\n\n### Tokens\nUse tokens.\n\nNo inline styles.");
+  });
+
+  it("appends the feature's additions after the project's", () => {
+    const tokens = { id: "a", title: "Tokens", text: "Use tokens.", enabled: true };
+    const modal = { id: "b", title: "", text: "The modal closes on Esc.", enabled: true };
+    expect(additionsPrompt([tokens], [modal])).toBe(
+      "## Additional instructions for this project\n\n### Tokens\nUse tokens.\n\n## Additional instructions for this feature\n\nThe modal closes on Esc.",
+    );
+    expect(additionsPrompt([], [modal, { ...tokens, enabled: false }])).toBe("## Additional instructions for this feature\n\nThe modal closes on Esc.");
   });
 });
 

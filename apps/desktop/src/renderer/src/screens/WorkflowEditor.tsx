@@ -20,6 +20,8 @@ import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { Loading } from "../components/Loading.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { EffortSwitch } from "../components/EffortSwitch.js";
+import { EFFORTS, MODELS, type Effort } from "../lib/agentModels.js";
 import { laneFor, lanesOf, nodeColor, type Lane } from "../lib/groups.js";
 import { stepLook } from "../lib/steps.js";
 import { useTheme } from "../lib/theme.js";
@@ -555,7 +557,7 @@ function Canvas({
 /** Step types to drag onto the canvas (or click to add). Built-in steps appear once. */
 function Toolbar({ nodeTypes, draft, onAdd, onArrange, onAddLane }: { nodeTypes: NodeTypeDto[]; draft: Draft; onAdd(type: string): void; onArrange(): void; onAddLane(): void }) {
   const used = new Set(draft.nodes.map((n) => n.id));
-  const builtin = nodeTypes.filter((t) => t.fixedId);
+  const builtin = nodeTypes.filter((t) => t.fixedId && t.template);
   const available = builtin.filter((t) => !used.has(t.fixedId ?? ""));
   const chip = (t: NodeTypeDto) => (
     <button
@@ -716,6 +718,15 @@ function NodeSettings({
 }) {
   const lanes = lanesOf(draft.lanes, draft.nodes);
   const setNode = (patch: Partial<WorkflowNodeDto>) => onChange((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === node.id ? { ...n, ...patch } : n)) }));
+  const config = (node["config"] ?? {}) as Record<string, unknown>;
+  const model = typeof config["model"] === "string" ? config["model"] : "";
+  const effort = typeof config["effort"] === "string" ? config["effort"] : "";
+  const setConfig = (key: "model" | "effort", value: string) => {
+    const next = { ...config };
+    if (value) next[key] = value;
+    else delete next[key];
+    setNode({ config: next });
+  };
   const candidates = draft.nodes.filter((n) => n.id !== node.id && !node.dependencies.includes(n.id) && canDepend(draft.nodes, n.id, node.id));
   const label = (id: string) => draft.nodes.find((n) => n.id === id)?.label ?? id;
   return (
@@ -755,6 +766,34 @@ function NodeSettings({
           ))}
         </select>
       </label>
+      {info?.kind === "ai" ? (
+        <>
+          <label className="ff-field">
+            <span>Model</span>
+            <select className="ff-input" value={model} disabled={!editable} onChange={(e) => setConfig("model", e.target.value)}>
+              <option value="">Default — Claude Code&apos;s own</option>
+              {MODELS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label} — {m.hint}
+                </option>
+              ))}
+              {/* A full model id written in the YAML stays selectable. */}
+              {model && !MODELS.some((m) => m.value === model) ? <option value={model}>{model}</option> : null}
+            </select>
+          </label>
+          <div className="ff-field">
+            <span id="ff-wf-effort-label">Effort ({EFFORTS.find((e) => e.value === effort)?.label ?? "Default — Claude Code's own"})</span>
+            <EffortSwitch
+              levels={[{ value: "", label: "Default — Claude Code's own" }, ...EFFORTS]}
+              value={(EFFORTS.some((e) => e.value === effort) ? effort : "") as Effort}
+              onChange={(v) => setConfig("effort", v)}
+              labelledBy="ff-wf-effort-label"
+              disabled={!editable}
+            />
+            <small className="ff-muted">A model or effort chosen for a feature, or for one step on the run screen, overrides these.</small>
+          </div>
+        </>
+      ) : null}
       <div className="ff-field">
         <span>Runs after</span>
         {node.dependencies.length ? (
@@ -1074,7 +1113,7 @@ function freeId(taken: Set<string>, prefix: string): string {
 
 function addNode(draft: Draft, type: string, nodeTypes: NodeTypeDto[], lane: Lane | undefined): Draft {
   const info = nodeTypes.find((t) => t.type === type);
-  if (!info || !lane) return draft;
+  if (!info?.template || !lane) return draft;
   const taken = new Set(draft.nodes.map((n) => n.id));
   if (info.fixedId && taken.has(info.fixedId)) return draft;
   const id = info.fixedId ?? freeId(taken, type === "manual.check" ? "check" : "prompt");

@@ -2,7 +2,7 @@ import { nowIso, type SourceSnapshot } from "@frontflow/domain";
 import type { NodeHandler, NodeInput } from "@frontflow/workflow-engine";
 import { fileList, latestUpload, lineCount, loadSnapshot, reportStep, writeRunDocuments, type ReportOutput } from "../ai-step.js";
 import type { ImportedBaSpec, ImportedBatch, ImportedOpsGuide, NodeServices } from "../services.js";
-import { featureOf, runInputs, upstream, workspaceOf } from "../util.js";
+import { featureOf, optionalUpstream, runInputs, upstream, workspaceOf } from "../util.js";
 
 /** The business scenarios the agent read from the BA spec (short Markdown, in Vietnamese). */
 export type BaSpecOutput = ReportOutput & {
@@ -25,6 +25,16 @@ export interface OpsGuideOutput {
 /** The acceptance test design (Markdown, in Vietnamese): test cases per scenario and what cannot be tested. */
 export type TestDesignOutput = ReportOutput;
 
+/** The BA read by B2.ba_spec (C1.ba_spec in runs started before feature delivery v9). */
+export function baSpecOf(input: NodeInput): BaSpecOutput | undefined {
+  return optionalUpstream<BaSpecOutput>(input, "B2.ba_spec") ?? optionalUpstream<BaSpecOutput>(input, "C1.ba_spec");
+}
+
+/** The UI vs BA review for a prompt, or "Không có" in workflows without B2.ba_ui_review (before feature delivery v11). */
+export function baReviewOf(input: NodeInput): string {
+  return optionalUpstream<ReportOutput>(input, "B2.ba_ui_review")?.reportPath ?? "Không có";
+}
+
 /** The operations guide for a prompt: its files, or "Không có" when the feature has none. */
 export function opsGuideOf(input: NodeInput): string {
   const files = upstream<OpsGuideOutput>(input, "C2.ops_guide").opsGuideFiles;
@@ -32,11 +42,12 @@ export function opsGuideOf(input: NodeInput): string {
 }
 
 /**
- * Workflow C1 — BA-driven test design (spec §14.1). The BA specification is the business test
- * oracle: test cases come from the BA only — not from the API contract, the design or the code,
- * which B2 is still integrating meanwhile; C2 builds the automated tests on the integrated
- * frontend. Their expected results come from the BA only. Both steps are editable
- * prompts whose answers are Markdown reports; test design is gated on its conclusion. The optional
+ * Reading the BA (B2.ba_spec) and BA-driven test design (C1, spec §14.1). The BA names the UI cases
+ * the integration must handle, so B2 waits for its scenarios; it is also the business test oracle:
+ * business expectations come from BA; presentation and notification text come from design
+ * evidence and accepted choices in the UI vs BA review, except explicitly mandatory BA copy.
+ * C2 builds automated tests without deriving expectations from implementation. Both steps use
+ * editable prompts whose answers are Markdown reports; test design is gated on its conclusion. The optional
  * operations guide (C2, no AI) only tells the auto-test agents how to prepare test data.
  */
 export function testDesignHandlers(services: NodeServices): Record<string, NodeHandler> {
@@ -46,8 +57,8 @@ export function testDesignHandlers(services: NodeServices): Record<string, NodeH
         const provided = input.providedInput as Partial<ImportedBaSpec> | undefined;
         const docs = latestUpload(provided?.ba, runInputs(input).ba);
         if (!docs.length) {
-          ctx.log("info", "Waiting for the BA specification; implementation continues without it (test design pending)");
-          return { status: "waiting_for_input", prompt: "Import the BA specification (Markdown, one or more files) to design the acceptance tests. Implementation continues meanwhile; the feature cannot be reported as business verified without it." };
+          ctx.log("info", "Waiting for the BA specification; the API integration and the test design start once it is read");
+          return { status: "waiting_for_input", prompt: "Import the BA specification (Markdown, one or more files): the API integration and UI states follow the cases it names, and the acceptance tests are designed from it." };
         }
         const loaded = await Promise.all(docs.map(async (doc) => ({ doc, stored: await loadSnapshot(services, ctx.projectId, doc.snapshotId) })));
         const { projectPath } = await workspaceOf(ctx, services, input);
@@ -74,7 +85,7 @@ export function testDesignHandlers(services: NodeServices): Record<string, NodeH
     },
 
     // Workflow C2, optional and never waits: most features have no operations guide. Importing one
-    // later runs the auto-tests again with it; test design (BA only) is not affected.
+    // later runs the auto-tests again with it; test design is not affected.
     "tests.read_ops_guide": {
       async execute(ctx, input) {
         const provided = input.providedInput as Partial<ImportedOpsGuide> | undefined;
@@ -99,13 +110,13 @@ export function testDesignHandlers(services: NodeServices): Record<string, NodeH
 
     "tests.design": {
       async execute(ctx, input) {
-        const spec = upstream<BaSpecOutput>(input, "C1.ba_spec");
+        const spec = baSpecOf(input) ?? upstream<BaSpecOutput>(input, "B2.ba_spec");
         const { projectPath } = await workspaceOf(ctx, services, input);
         return reportStep(ctx, services, input, {
           fileName: "test-design.md",
           label: "Acceptance test design",
           cwd: projectPath,
-          vars: { feature: featureOf(input), baSpec: fileList(spec.baSpecFiles), baScenarios: spec.reportPath },
+          vars: { feature: featureOf(input), baSpec: fileList(spec.baSpecFiles), baScenarios: spec.reportPath, baReview: baReviewOf(input) },
           gate: {
             notEnough: "Some BA scenarios cannot be tested yet (see the test design). Import a newer BA specification in “Read BA specification” — test design runs again — or accept the gaps to continue without those tests.",
             unknown: "The test design has no clear Đủ / Chưa đủ conclusion. Read it, then run the step again or accept to continue (recorded as assumptions).",

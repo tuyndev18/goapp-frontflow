@@ -16,23 +16,44 @@
 #   short Markdown review (api-review.md). The "wait for update" loop is a single gate: A.review
 #   returns waiting_for_input unless the review's `Đáp ứng: NN%` reaches 92%; importing a newer
 #   contract runs it again, provideInput({ accept: true }) continues with the gaps as assumptions.
-# ③ B2 starts once the contract has been reviewed. B2.check_backend runs provider verification
-#   when the runtime API is reachable; otherwise the feature is contract-only (never reported as
-#   runtime verified, spec §13.6).
-# ④ C1 turns the BA specification into acceptance test cases (spec §5, §14) from the BA only — not
-#   from the API contract, the design or the code — so it runs as soon as the BA is imported. A
-#   missing BA spec does not block implementation: C1.ba_spec waits with the softer run status
-#   test_design_pending (spec §11.1). C1.test_design waits for input unless its conclusion is `Đủ`.
+# ③ B2 starts once the contract has been reviewed and the BA specification has been read:
+#   B2.ba_spec waits for the BA (one or more files, a newer upload at any time) and the agent lists
+#   its business scenarios and the UI cases it names (ba-scenarios.md). B2.ba_ui_review checks the
+#   UI built from Figma against it: the BA decides behaviour (flow, validation, forms, states,
+#   business rules); Figma supplies presentation and copy unless BA mandates exact wording. Figma shows less than the BA, so it lists what the UI still
+#   lacks (ba-ui-review.md) and waits only while the two conflict. B2.api_binding is one agent
+#   session that binds the API and builds what the review lists (tests are written in ④). There is no
+#   backend check, so the feature is contract-only (never reported as runtime verified, spec §13.6).
+# ④ C1 turns the BA specification into acceptance test cases (spec §5, §14): behaviour from the BA,
+#   what the screen shows from the UI and the review's decisions. C1.test_design waits for input
+#   unless its conclusion is `Đủ`.
 #   C2.ops_guide (optional, no AI, never waits) takes the feature's test operations guide, e.g. how
 #   to prepare data in the CMS, for the auto-tests only; importing it later runs C2 again. C2
-#   generates the Playwright tests once the UI states are in; then the agent runs them the
-#   project's way, fixes implementation/test-generation gaps and reports (acceptance-tests.md);
-#   FrontFlow runs no test command itself and waits for the user unless the report says `Đạt`.
+#   generates the automated tests once the API is integrated and checks them with the unit tests and
+#   one short E2E stage; then the agent runs the unit tests (acceptance-tests.md) and, in a session
+#   of its own, the E2E tests (e2e-tests.md), fixes implementation/test-generation gaps and reports;
+#   FrontFlow runs no test command itself and waits for the user unless a report says `Đạt`.
+#
+# AI steps set their own model and effort (config.model / config.effort): Opus for what is delivered
+# or what the next steps take as the truth (the UI, reading the BA, the UI vs BA review, the API
+# integration, the test design), Sonnet for the API review and the tests. Effort is medium (it is
+# spent on every turn), except high for the UI vs BA review: one pass, short output, reasoning across
+# two sources to decide whether to stop. A model or effort chosen for the run, or for one step of it,
+# overrides them.
 #
 # v8: the three workflow files (ui-implementation, fe-readiness, business-validation) are one
 # workflow with its canvas lanes; node ids are unchanged.
+# v9: reading the BA moved from C1 into lane ③ (C1.ba_spec → B2.ba_spec): the BA names the UI
+# cases to handle, so the API binding and the UI states wait for it.
+# v10: B2.api_binding also completes the UI states (B2.ui_states removed) and B2.check_backend is
+# gone: nothing set a backend URL, so it always reported contract-only.
+# v11: B2.ba_ui_review between the UI and the integration, so what the BA needs beyond Figma is
+# built there instead of while running the tests; the E2E tests run in their own step
+# (C2.run_e2e); a model and effort per AI step.
+# v12: models reviewed: Opus also for AI implements UI (Sonnet gave a UI below the design), Read BA
+# specification and the test design; effort medium except for the UI vs BA review.
 id: feature-delivery
-version: 8
+version: 12
 name: Feature delivery
 description: UI from Figma, review against the API contract when it arrives, API integration, and BA-driven acceptance tests.
 defaults:
@@ -51,10 +72,10 @@ lanes:
     subtitle: "When the contract arrives: is the UI covered?"
   - id: B2
     title: ③ Integrate the API
-    subtitle: Bind API, check backend, then UI states
+    subtitle: Read BA, check the UI against it, bind the API
   - id: C
     title: ④ Prove it works
-    subtitle: BA spec → test cases → run them
+    subtitle: Test cases → unit tests → E2E
     groups: [C1, C2]
 
 nodes:
@@ -74,10 +95,12 @@ nodes:
     type: ai.implement_ui
     label: AI implements UI
     group: B1
-    description: The agent runs the editable prompt to implement the presentational UI from Figma with mock data (no API yet).
+    description: The agent runs the editable prompt to implement the presentational UI from Figma with mock data (no API yet), with a dev-only bubble to switch between the UI states of the design.
     dependencies: [B1.figma_scope]
     config:
       ai: true
+      model: opus
+      effort: medium
     mutation: true
     timeoutMs: 0 # AI step: no time limit
     retryPolicy:
@@ -85,44 +108,55 @@ nodes:
       backoff: exponential
       baseDelayMs: 5000
       retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: B2.ba_spec
+    type: tests.read_ba
+    label: Read BA specification
+    group: B2
+    description: Import the BA specification (Markdown, one or more files), and again whenever it changes (only the latest upload is read); the agent (editable prompt) extracts what the FE needs from it (business rules, actions and outcomes, exceptions, acceptance criteria, the full flow, open points) in a short Markdown report, for the API binding, the UI states and the acceptance tests.
+    readOnly: false
+    timeoutMs: 0 # AI step: no time limit
+    config:
+      ai: true
+      aiAttempts: 2
+      model: opus
+      effort: medium
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [IO_ERROR, AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
+
+  - id: B2.ba_ui_review
+    type: readiness.ba_ui_review
+    label: AI reviews UI vs BA
+    group: B2
+    description: The agent (editable prompt) checks the UI built from Figma against the BA — the BA decides the flow, validation, forms, states and rules, Figma supplies presentation and notification text unless BA mandates exact wording — and lists what the UI still lacks for the integration to build; while the BA and Figma conflict it waits for your decision.
+    dependencies: [B1.implement_ui, B2.ba_spec]
+    # Not cacheable: the user may accept the proposed choices through provideInput.
+    readOnly: false
+    timeoutMs: 0 # AI step: no time limit
+    config:
+      ai: true
+      aiAttempts: 2
+      model: opus
+      effort: high
+    retryPolicy:
+      maxAttempts: 3
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
 
   - id: B2.api_binding
     type: ai.api_integration
-    label: AI binds API
+    label: AI integrates API
     group: B2
-    description: API client (existing pattern first) and query/mutation bindings for every mapped interaction of the built UI, with consumer contract tests.
-    dependencies: [A.review, B1.implement_ui]
+    description: API bindings for every interaction of the built UI, then what the UI vs BA review lists (flows, validation, forms, states) and the API errors; the tests are written in lane ④.
+    dependencies: [A.review, B2.ba_ui_review]
     config:
       ai: true
-    mutation: true
-    timeoutMs: 0 # AI step: no time limit
-    retryPolicy:
-      maxAttempts: 3
-      backoff: exponential
-      baseDelayMs: 5000
-      retryableErrors: [AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
-
-  - id: B2.check_backend
-    type: integration.check_backend
-    label: Check backend
-    group: B2
-    description: Provider verification when the backend is reachable, otherwise contract-only.
-    dependencies: [B2.api_binding]
-    timeoutMs: 600000
-    retryPolicy:
-      maxAttempts: 2
-      backoff: linear
-      baseDelayMs: 5000
-      retryableErrors: [NETWORK_ERROR, COMMAND_FAILED]
-
-  - id: B2.ui_states
-    type: ai.bind_ui_states
-    label: AI adds UI states
-    group: B2
-    description: Loading, empty, error, disabled and permission states wired to real request state, with component and integration tests.
-    dependencies: [B2.check_backend]
-    config:
-      ai: true
+      model: opus
+      effort: medium
     mutation: true
     timeoutMs: 0 # AI step: no time limit
     retryPolicy:
@@ -157,41 +191,28 @@ nodes:
     config:
       ai: true
       aiAttempts: 2
+      model: sonnet
+      effort: medium
     retryPolicy:
       maxAttempts: 3
       backoff: linear
       baseDelayMs: 2000
       retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
 
-  - id: C1.ba_spec
-    type: tests.read_ba
-    label: Read BA specification
-    group: C1
-    description: Import the BA specification (Markdown, one or more files), and again whenever it changes (only the latest upload is read); the agent (editable prompt) lists its business scenarios in a short Markdown report.
-    readOnly: false
-    timeoutMs: 0 # AI step: no time limit
-    config:
-      ai: true
-      aiAttempts: 2
-      waitingRunStatus: test_design_pending
-    retryPolicy:
-      maxAttempts: 3
-      backoff: linear
-      baseDelayMs: 2000
-      retryableErrors: [IO_ERROR, AI_OUTPUT_INVALID, AGENT_SESSION_FAILED, AGENT_TIMEOUT, NODE_TIMEOUT]
-
   - id: C1.test_design
     type: tests.design
     label: Design acceptance tests
     group: C1
-    description: The agent (editable prompt) writes the acceptance test cases of every business scenario from the BA only, and what cannot be tested yet, as a Markdown report; anything but "enough" waits for a newer BA spec or your decision.
-    dependencies: [C1.ba_spec]
+    description: The agent (editable prompt) designs the unit tests and the E2E autotests (the full flow with every role, plus 2–3 edge cases) from the BA and the UI vs BA review, as a Markdown report; anything but "enough" waits for a newer BA spec or your decision.
+    dependencies: [B2.ba_ui_review]
     # Not cacheable: the user may accept testability gaps through provideInput.
     readOnly: false
     timeoutMs: 0 # AI step: no time limit
     config:
       ai: true
       aiAttempts: 2
+      model: opus
+      effort: medium
     retryPolicy:
       maxAttempts: 3
       backoff: linear
@@ -215,10 +236,12 @@ nodes:
     type: ai.acceptance_tests
     label: AI generates auto-tests
     group: C2
-    description: Map the acceptance test cases onto the integrated frontend and write one Playwright E2E test per test case (Playwright is set up when missing; the tests are not run here), preparing test data as the operations guide says.
-    dependencies: [C1.test_design, C2.ops_guide, B2.ui_states]
+    description: Map the acceptance test cases onto the integrated frontend and write one automated test per test case, preparing test data as the operations guide says; the unit tests and one short E2E stage are run to fix the tests themselves.
+    dependencies: [C1.test_design, C2.ops_guide, B2.api_binding]
     config:
       ai: true
+      model: sonnet
+      effort: medium
     mutation: true
     timeoutMs: 0 # AI step: no time limit
     retryPolicy:
@@ -229,13 +252,34 @@ nodes:
 
   - id: C2.run_tests
     type: test.acceptance
-    label: Run acceptance tests
+    label: Run unit tests
     group: C2
-    description: The agent (editable prompt) runs the feature's Playwright tests the project's way, fixes implementation and test-generation gaps, and reports the result in Markdown; anything but "Đạt" waits for your decision.
+    description: The agent (editable prompt) runs the feature's unit tests, fixes implementation and test-generation gaps, and reports the result in Markdown; anything but "Đạt" waits for your decision.
     dependencies: [C2.generate_tests]
     config:
       ai: true
       aiAttempts: 2
+      model: sonnet
+      effort: medium
+    mutation: true
+    timeoutMs: 0 # AI step: no time limit
+    retryPolicy:
+      maxAttempts: 2
+      backoff: linear
+      baseDelayMs: 2000
+      retryableErrors: [AI_OUTPUT_INVALID, AGENT_SESSION_FAILED]
+
+  - id: C2.run_e2e
+    type: test.e2e
+    label: Run E2E tests
+    group: C2
+    description: The agent (editable prompt) runs the E2E auto-tests in the real environment — the full flow, then the edge cases — fixes implementation and test gaps, and reports the result in Markdown; anything but "Đạt" waits for your decision.
+    dependencies: [C2.run_tests]
+    config:
+      ai: true
+      aiAttempts: 2
+      model: sonnet
+      effort: medium
     mutation: true
     timeoutMs: 0 # AI step: no time limit
     retryPolicy:
@@ -249,5 +293,5 @@ nodes:
     label: Evidence report
     group: C2
     description: Summarize the run's reports, quality gates, Figma, files changed and evidence in a Markdown report.
-    dependencies: [C2.run_tests]
+    dependencies: [C2.run_e2e]
     timeoutMs: 120000

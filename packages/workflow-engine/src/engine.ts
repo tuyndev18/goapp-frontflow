@@ -329,7 +329,8 @@ export class WorkflowEngine {
       const provided = { ...this.providedInputs(rt.run), [nodeId]: structuredClone(data) };
       rt.run.inputs = { ...rt.run.inputs, [PROVIDED_INPUTS_KEY]: provided };
       await this.store.saveRun(structuredClone(rt.run));
-      await this.updateNode(rt, nodeId, { status: "ready", attempt: 0, blockerSummary: undefined, error: undefined });
+      // New input starts a new piece of work: its time counts from now.
+      await this.updateNode(rt, nodeId, { status: "ready", attempt: 0, blockerSummary: undefined, error: undefined, startedAt: undefined });
       if (rt.run.status === "waiting" || rt.run.status === "test_design_pending") await this.setRunStatus(rt, "running", `input provided for ${nodeId}`);
       await this.pump(rt);
     });
@@ -353,7 +354,8 @@ export class WorkflowEngine {
         for (const id of rt.order) {
           const node = this.node(rt, id);
           if (node.status === "running") {
-            await this.updateNode(rt, id, { status: "ready", attempt: Math.max(0, node.attempt - 1), startedAt: undefined });
+            // Same piece of work, continued: it keeps its start time (and its agent session).
+            await this.updateNode(rt, id, { status: "ready", attempt: Math.max(0, node.attempt - 1) });
           } else if (node.status === "retrying") {
             await this.updateNode(rt, id, { status: "ready" });
           }
@@ -652,7 +654,7 @@ export class WorkflowEngine {
     if (reason !== "pause") return;
     for (const id of running) {
       const node = this.node(rt, id);
-      await this.updateNode(rt, id, { status: "ready", attempt: Math.max(0, node.attempt - 1), startedAt: undefined });
+      await this.updateNode(rt, id, { status: "ready", attempt: Math.max(0, node.attempt - 1) });
     }
     for (const id of backingOff) {
       if (this.node(rt, id).status === "retrying") await this.updateNode(rt, id, { status: "ready" });
@@ -806,7 +808,8 @@ export class WorkflowEngine {
       idempotencyKey,
       error: undefined,
       blockerSummary: undefined,
-      startedAt: this.now(),
+      // A retry, a resumed pause or a restart continues the same work: the step time keeps counting.
+      startedAt: node.startedAt ?? this.now(),
       finishedAt: undefined,
     });
     void this.execute(rt, spec, exec, input);

@@ -1,14 +1,22 @@
 import type { ArtifactKind, ProjectProfile } from "@frontflow/domain";
 import { NodeError, type NodeExecutionContext, type NodeInput } from "@frontflow/workflow-engine";
 import type { FeatureRunInputs, NodeServices, ProjectContext } from "./services.js";
+import type { StepAgent } from "./step-agents.js";
 
 export function runInputs(input: NodeInput): FeatureRunInputs {
   return input.inputs as unknown as FeatureRunInputs;
 }
 
-/** What the run chose for its AI steps: the saved Claude account, the model and the effort. */
-export function claudeAccountOf(input: NodeInput): { claudeAccountId?: string; model?: string; effort?: string } {
-  const { claudeAccountId, model, effort } = runInputs(input);
+/**
+ * What an AI step runs with: the run's saved Claude account; the model and effort chosen for this
+ * step of the run (`step`, on the run screen), else for the whole run, else the step's own in the
+ * workflow (`config.model` / `config.effort`), else Claude Code's.
+ */
+export function claudeAccountOf(input: NodeInput, step: StepAgent = {}): { claudeAccountId?: string; model?: string; effort?: string } {
+  const run = runInputs(input);
+  const { claudeAccountId } = run;
+  const model = step.model || run.model || input.config["model"];
+  const effort = step.effort || run.effort || input.config["effort"];
   return {
     ...(typeof claudeAccountId === "string" && claudeAccountId ? { claudeAccountId } : {}),
     ...(typeof model === "string" && model ? { model } : {}),

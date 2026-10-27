@@ -217,7 +217,7 @@ describe("built-in workflows", () => {
     expect(others).toEqual([]);
     if (!def) throw new Error("no built-in workflow");
     expect(def.id).toBe("feature-delivery");
-    expect(def.version).toBe(8);
+    expect(def.version).toBe(12);
     expect(def.nodes).toHaveLength(5 + 2 + 6);
     const groups = new Set(def.nodes.map((n) => n.group));
     expect(groups).toEqual(new Set(["B1", "A", "B2", "C1", "C2"]));
@@ -238,20 +238,31 @@ describe("built-in workflows", () => {
     expect(byId.get("A.review")?.dependencies).toEqual(["A.api_contract", "B1.implement_ui"]);
     expect(byId.get("A.review")).toMatchObject({ type: "readiness.review", readOnly: false, config: { ai: true } });
     expect(byId.get("A.api_contract")?.config?.["ai"]).toBeUndefined();
-    // B2 integrates the API only from a reviewed contract.
-    expect(byId.get("B2.api_binding")?.dependencies).toEqual(["A.review", "B1.implement_ui"]);
-    // C1 designs tests from the BA only: no API contract, review or implementation.
-    expect(byId.get("C1.test_design")?.dependencies).toEqual(["C1.ba_spec"]);
+    // B2 integrates the API only from a reviewed contract and the BA checked against the built UI (v11).
+    expect(byId.get("B2.ba_spec")).toMatchObject({ type: "tests.read_ba", group: "B2", dependencies: [] });
+    expect(byId.get("B2.ba_ui_review")).toMatchObject({ type: "readiness.ba_ui_review", dependencies: ["B1.implement_ui", "B2.ba_spec"] });
+    expect(byId.get("B2.api_binding")?.dependencies).toEqual(["A.review", "B2.ba_ui_review"]);
+    // C1 designs tests from the BA and the UI vs BA review's decisions: no API contract or review.
+    expect(byId.get("C1.test_design")?.dependencies).toEqual(["B2.ba_ui_review"]);
     // The operations guide is optional and only feeds the auto-tests: no dependency, no AI.
     expect(byId.get("C2.ops_guide")).toMatchObject({ type: "tests.read_ops_guide", dependencies: [] });
     expect(byId.get("C2.ops_guide")?.config?.["ai"]).toBeUndefined();
-    expect(byId.get("C1.ba_spec")?.config?.["waitingRunStatus"]).toBe("test_design_pending");
-    expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "C2.ops_guide", "B2.ui_states"]);
+    // One agent session binds the API and completes the UI states; there is no backend check (v10).
+    expect(byId.has("B2.ui_states")).toBe(false);
+    expect(byId.has("B2.check_backend")).toBe(false);
+    expect(byId.get("C2.generate_tests")?.dependencies).toEqual(["C1.test_design", "C2.ops_guide", "B2.api_binding"]);
+    // The E2E tests run in their own session after the unit tests.
+    expect(byId.get("C2.run_e2e")).toMatchObject({ type: "test.e2e", dependencies: ["C2.run_tests"] });
+    expect(byId.get("C2.evidence_report")?.dependencies).toEqual(["C2.run_e2e"]);
+    // Every AI step sets its model and effort: Opus for what is delivered or taken as the truth, Sonnet for the API review and the tests.
+    const aiSteps = def.nodes.filter((n) => n.config?.["ai"]);
+    for (const node of aiSteps) expect(node.config).toMatchObject({ model: expect.any(String), effort: expect.any(String) });
+    expect(aiSteps.filter((n) => n.config?.["model"] === "opus").map((n) => n.id)).toEqual(["B1.implement_ui", "B2.ba_spec", "B2.ba_ui_review", "B2.api_binding", "C1.test_design"]);
 
     const graph = toGraph(def);
     expect(graph.lanes).toEqual(def.lanes);
     expect(graph.nodes).toHaveLength(def.nodes.length);
     expect(graph.edges.find((e) => e.id === "A.review->B2.api_binding")?.conditional).toBe(false);
-    expect(graph.edges.some((e) => (e.source.startsWith("A.") || e.source.startsWith("B")) && e.target.startsWith("C1."))).toBe(false);
+    expect(graph.edges.some((e) => (e.source.startsWith("A.") || (e.source.startsWith("B") && e.source !== "B2.ba_ui_review")) && e.target.startsWith("C1."))).toBe(false);
   });
 });

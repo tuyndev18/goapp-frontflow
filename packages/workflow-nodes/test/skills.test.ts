@@ -54,6 +54,16 @@ describe("SkillLibrary", () => {
     expect(lib.forNode("feature-delivery", "B2.ui_states").map((s) => s.name)).toEqual(["states", "a11y"]);
   });
 
+  it("keeps the skills of a moved step under its new id, in every workflow and for runs started before", () => {
+    const root = path.join(tmp("ff-skills-"), "skills");
+    const lib = new SkillLibrary(root);
+    lib.save({ name: "ba", description: "BA reading", body: "List every UI case." });
+    writeFileSync(path.join(root, "assignments.json"), JSON.stringify({ nodes: { "feature-delivery/C1.ba_spec": ["ba"], "my-delivery/C1.ba_spec": ["ba"] } }));
+    expect(lib.assignments()).toEqual({ "feature-delivery/B2.ba_spec": ["ba"], "my-delivery/B2.ba_spec": ["ba"] });
+    expect(lib.forNode("feature-delivery", "B2.ba_spec").map((s) => s.name)).toEqual(["ba"]);
+    expect(lib.forNode("my-delivery", "C1.ba_spec").map((s) => s.name)).toEqual(["ba"]);
+  });
+
   it("keeps skills per workflow step, copied to a clone and dropped with a deleted workflow", () => {
     const lib = new SkillLibrary(path.join(tmp("ff-skills-"), "skills"));
     lib.save({ name: "a11y", description: "Accessibility", body: "Label every input." });
