@@ -68,6 +68,7 @@ import type {
 import { createAccountsService } from "./accounts.js";
 import { AppError, type IpcHandlers, type PushBus } from "./ipc-gateway.js";
 import { SettingsStore } from "./settings.js";
+import type { FloWindow } from "./flo-window.js";
 
 const TERMINAL_BUFFER = 256_000;
 const TERMINAL_BUFFERS_KEPT = 24;
@@ -85,8 +86,8 @@ export interface Services {
   dispose(): Promise<void>;
 }
 
-export async function createServices(options: { dataDir: string; bus: PushBus; runnerEntry: string }): Promise<Services> {
-  const { dataDir, bus } = options;
+export async function createServices(options: { dataDir: string; bus: PushBus; runnerEntry: string; flo: FloWindow }): Promise<Services> {
+  const { dataDir, bus, flo } = options;
   mkdirSync(dataDir, { recursive: true });
   const db = openDatabase(join(dataDir, "database.sqlite"));
   const settingsStore = new SettingsStore(dataDir);
@@ -865,7 +866,24 @@ export async function createServices(options: { dataDir: string; bus: PushBus; r
         figmaListener.reconnect();
         bus.send("figma:status", figmaStatus());
       }
+      if (patch.showFlo !== undefined) {
+        flo.setVisible(settings.showFlo);
+        bus.send("flo:visibility", { visible: settings.showFlo });
+      }
+      if (patch.floSize !== undefined) flo.setSize(settings.floSize);
       return settings;
+    },
+
+    "flo:update": (state) => flo.update(state),
+    "flo:state": () => flo.current(),
+    "flo:config": () => flo.currentConfig(),
+    "flo:open": () => flo.open(),
+    "flo:moveTo": ({ x, y }) => flo.moveTo(x, y),
+    "flo:resize": ({ width, height }) => flo.resize(width, height),
+    "flo:hide": () => {
+      settingsStore.update({ showFlo: false });
+      flo.setVisible(false);
+      bus.send("flo:visibility", { visible: false });
     },
   };
 

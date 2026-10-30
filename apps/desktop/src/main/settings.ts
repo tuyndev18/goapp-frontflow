@@ -10,6 +10,8 @@ const DEFAULTS: SettingsDto = {
   retentionDays: 30,
   allowArbitraryShell: false,
   goFigmaServerPath: "",
+  showFlo: true,
+  floSize: "medium",
 };
 
 export class SettingsStore {

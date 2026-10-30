@@ -7,6 +7,7 @@ import { useApp } from "../store.js";
 import { Loading } from "../components/Loading.js";
 import { ActivityFeed } from "../components/ActivityFeed.js";
 import { ConfirmDialog } from "../components/ConfirmDialog.js";
+import { Menu } from "../components/Menu.js";
 import { TmuxView } from "../components/TmuxView.js";
 import { buildActivity, formatDuration, lastActivityByNode } from "../lib/activity.js";
 import { buildTranscript } from "../lib/transcript.js";
@@ -15,7 +16,7 @@ import { StepDetail } from "./StepDetail.js";
 import { GraphView } from "./GraphView.js";
 
 const EMPTY: EventDto[] = [];
-const TERMINAL = new Set(["completed", "completed_with_assumptions", "failed", "cancelled", "timed_out", "blocked"]);
+export const TERMINAL = new Set(["completed", "completed_with_assumptions", "failed", "cancelled", "timed_out", "blocked"]);
 const PANEL_KEY = "ff-run-panel";
 const PANEL_MIN = 380;
 const CANVAS_MIN = 320;
@@ -52,6 +53,11 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
   useEffect(() => {
     void loadRun(runId);
   }, [runId, loadRun]);
+
+  // A step of this run opened from elsewhere (Flo's card) while the run is already on screen.
+  useEffect(() => {
+    if (initialNodeId) setSelected(initialNodeId);
+  }, [initialNodeId]);
 
   const latest = useMemo(() => latestNodeRuns(state?.nodeRuns ?? []), [state?.nodeRuns]);
   const lines = useMemo(() => buildActivity(events, state?.nodeRuns ?? []), [events, state?.nodeRuns]);
@@ -104,7 +110,6 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
 
   if (!state) return <Loading label="Loading run" screen />;
   const nodes = state.graph.nodes;
-  const done = nodes.filter((n) => ["passed", "skipped"].includes(latest.get(n.id)?.status ?? "")).length;
   const started = state.run.startedAt ?? state.run.createdAt;
   const elapsed = (state.run.finishedAt ? Date.parse(state.run.finishedAt) : now) - Date.parse(started);
   const runningSteps = nodes.filter((n) => ["running", "retrying"].includes(latest.get(n.id)?.status ?? ""));
@@ -143,25 +148,14 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
           <button type="button" className="ff-back" onClick={() => navigate({ name: "project", projectId })}>
             ← {project?.name ?? "Project"}
           </button>
-          <h1>{state.run.title ?? state.run.workflowId}</h1>
-          <div className="ff-run-meta">
+          <div className="ff-run-heading">
+            <h1>{state.run.title ?? state.run.workflowId}</h1>
             <StatusBadge spec={visualStateForRun(state.run.status)} />
-            {state.run.workflowName ? <span className="ff-meta-item">⛓ {state.run.workflowName}</span> : null}
-            <span className="ff-meta-item">
-              <strong>{done}</strong>/{nodes.length} steps done
-            </span>
+          </div>
+          <div className="ff-run-meta">
+            {state.run.workflowName ? <span className="ff-meta-item">{state.run.workflowName}</span> : null}
             <span className="ff-meta-item">⏱ {formatDuration(Math.max(0, elapsed))}</span>
-            {runningSteps.length ? <span className="ff-meta-item ff-now">● Now: {runningSteps.map((n) => n.label).join(", ")}</span> : null}
-            {needsInput.length ? (
-              <span className="ff-meta-item ff-run-waiting" role="alert">
-                ⏸ Waiting for you:{" "}
-                {needsInput.map((n) => (
-                  <button key={n.id} type="button" className="ff-link" onClick={() => setSelected(n.id)}>
-                    {n.label}
-                  </button>
-                ))}
-              </span>
-            ) : null}
+            {runningSteps.length ? <span className="ff-meta-item ff-now">● Working on {runningSteps.map((n) => n.label).join(", ")}</span> : null}
           </div>
         </div>
         <div className="ff-actions">
@@ -177,15 +171,36 @@ export function RunScreen({ projectId, runId, initialNodeId }: { projectId: stri
               ⏸ Pause
             </button>
           )}
-          <button type="button" className="ff-btn" disabled={!active} onClick={() => void control("runs:cancel")}>
-            ⊘ Cancel
-          </button>
-          <button type="button" className="ff-btn ff-btn-danger" onClick={() => setConfirmDelete(true)} aria-label="Delete run">
-            🗑 Delete
-          </button>
+          <Menu
+            label="More run actions"
+            trigger="⋯"
+            className="ff-btn"
+            items={[
+              { label: "Cancel run", hint: "Stop every step now", disabled: !active, onSelect: () => void control("runs:cancel") },
+              { label: "Delete run", hint: "History, logs, evidence and snapshots", danger: true, onSelect: () => setConfirmDelete(true) },
+            ]}
+          />
         </div>
       </header>
       <ProgressBar nodes={nodes} latest={latest} />
+      {/* What the run needs from the user comes first: one banner with a way into each waiting step. */}
+      {needsInput.length ? (
+        <div className="ff-run-attention" role="alert">
+          <span className="ff-run-attention-icon" aria-hidden="true">
+            ⏸
+          </span>
+          <span className="ff-run-attention-text">
+            <strong>Waiting for you</strong> · {needsInput.length === 1 ? "1 step needs your input" : `${needsInput.length} steps need your input`}
+          </span>
+          <span className="ff-row">
+            {needsInput.map((n) => (
+              <button key={n.id} type="button" className={`ff-btn ff-btn-small${n.id === selected ? " ff-btn-active" : ""}`} onClick={() => setSelected(n.id)}>
+                {n.label} →
+              </button>
+            ))}
+          </span>
+        </div>
+      ) : null}
 
       <div ref={split} className={`ff-run-split${layout.canvas ? "" : " ff-run-split-panel"}`} style={{ "--panel-w": `${layout.width}px` } as CSSProperties}>
         {layout.canvas ? (
@@ -324,7 +339,10 @@ function ProgressBar({ nodes, latest }: { nodes: GraphNodeDto[]; latest: Map<str
       </div>
       <div className="ff-progress-legend">
         <span className="ff-legend-total">
-          <strong>{nodes.length ? Math.round((done / nodes.length) * 100) : 0}%</strong> complete
+          <strong>
+            {done}/{nodes.length}
+          </strong>{" "}
+          steps · {nodes.length ? Math.round((done / nodes.length) * 100) : 0}%
         </span>
         {PROGRESS_LEGEND.map(({ tone, label }) => {
           const count = tones.filter((t) => t === tone).length;

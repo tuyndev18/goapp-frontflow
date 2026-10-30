@@ -209,7 +209,7 @@ export function additionsPrompt(additions: PromptAddition[], featureAdditions: P
     const used = list.filter((a) => a.enabled && a.text.trim());
     return used.length ? [heading, ...used.map((a) => (a.title ? `### ${a.title}\n${a.text.trim()}` : a.text.trim()))].join("\n\n") : "";
   };
-  return [section("## Additional instructions for this project", additions), section("## Additional instructions for this feature", featureAdditions)].filter(Boolean).join("\n\n");
+  return [section("## Chỉ dẫn bổ sung của project", additions), section("## Chỉ dẫn bổ sung của tính năng này", featureAdditions)].filter(Boolean).join("\n\n");
 }
 
 function read(path: string): string | undefined {

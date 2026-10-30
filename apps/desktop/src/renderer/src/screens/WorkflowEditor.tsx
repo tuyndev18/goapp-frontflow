@@ -24,6 +24,7 @@ import { EffortSwitch } from "../components/EffortSwitch.js";
 import { EFFORTS, MODELS, type Effort } from "../lib/agentModels.js";
 import { laneFor, lanesOf, nodeColor, type Lane } from "../lib/groups.js";
 import { stepLook } from "../lib/steps.js";
+import { StepIcon } from "../components/StepIcon.js";
 import { useTheme } from "../lib/theme.js";
 import { LANE_LABEL_W, LANE_PAD_Y, LaneHeaders, LaneNode, layout, NODE_H, NODE_W, type LaneBox, type LaneData } from "./GraphView.js";
 
@@ -572,7 +573,7 @@ function Toolbar({ nodeTypes, draft, onAdd, onArrange, onAddLane }: { nodeTypes:
       }}
       onClick={() => onAdd(t.type)}
     >
-      <span aria-hidden="true">{stepLook(t.type).icon}</span> {t.label}
+      <StepIcon name={stepLook(t.type).icon} size={16} /> {t.label}
     </button>
   );
   return (
@@ -611,7 +612,7 @@ const EditorStep = memo(function EditorStep({ data }: NodeProps<Node<EditorNodeD
       <Handle type="target" position={Position.Left} isConnectable={data.editable} style={{ top: 30, left: inset }} />
       <div className="ff-gnode-card" style={{ width: 60, height: 60 }}>
         <span className="ff-gnode-icon" aria-hidden="true">
-          {look.icon}
+          <StepIcon name={look.icon} />
         </span>
         {data.warnings.length ? (
           <span className="ff-gnode-status ff-wf-node-badge" aria-label={data.warnings.join(", ")}>
@@ -676,7 +677,7 @@ function NodeDrawer({
   return (
     <>
       <DrawerHead title={node.label || "Untitled step"} onClose={onClose}>
-        <span aria-hidden="true">{stepLook(node.type).icon}</span>
+        <StepIcon name={stepLook(node.type).icon} size={18} />
       </DrawerHead>
       <p className="ff-muted ff-small ff-wf-drawer-sub">
         {info?.label ?? node.type} · <span className="ff-mono">{node.id}</span>

@@ -1,11 +1,10 @@
 import { nowIso, type SourceSnapshot } from "@frontflow/domain";
 import type { NodeHandler } from "@frontflow/workflow-engine";
 import { fileList, latestUpload, lineCount, loadSnapshot, reportScore, reportStep, writeRunDocuments, type ReportJudgement, type ReportOutput } from "../ai-step.js";
-import { untrusted } from "../prompts.js";
 import type { ImportedApiContract, ImportedBatch, NodeServices } from "../services.js";
 import { featureOf, optionalUpstream, runInputs, upstream, workspaceOf } from "../util.js";
-import type { MutationOutput } from "./ai.js";
-import type { FigmaDesignOutput } from "./figma.js";
+import { notesOf, type MutationOutput } from "./ai.js";
+import { figmaFramesOf } from "./figma.js";
 import type { BaSpecOutput } from "./test-design.js";
 
 export interface ApiContractOutput {
@@ -88,7 +87,7 @@ export function readinessHandlers(services: NodeServices): Record<string, NodeHa
           vars: {
             feature: featureOf(input),
             apiContract: fileList(contract.apiContractFiles),
-            uiFiles: ui?.filesChanged.length ? ui.filesChanged.map((f) => `\n  - ${f}`).join("") : "the UI of this feature in the project (find it from the feature name)",
+            uiFiles: ui?.filesChanged.length ? ui.filesChanged.map((f) => `\n  - ${f}`).join("") : "UI của tính năng này trong project (tìm theo tên tính năng)",
           },
           gate: {
             judge: judgeCoverage,
@@ -106,7 +105,6 @@ export function readinessHandlers(services: NodeServices): Record<string, NodeHa
       async execute(ctx, input) {
         const spec = upstream<BaSpecOutput>(input, "B2.ba_spec");
         const ui = optionalUpstream<MutationOutput>(input, "B1.implement_ui");
-        const design = optionalUpstream<FigmaDesignOutput>(input, "B1.figma_scope");
         const { projectPath } = await workspaceOf(ctx, services, input);
         return reportStep(ctx, services, input, {
           fileName: "ba-ui-review.md",
@@ -117,8 +115,9 @@ export function readinessHandlers(services: NodeServices): Record<string, NodeHa
             feature: featureOf(input),
             baSpec: fileList(spec.baSpecFiles),
             baScenarios: spec.reportPath,
-            uiFiles: ui?.filesChanged.length ? ui.filesChanged.map((f) => `\n  - ${f}`).join("") : "the UI of this feature in the project (find it from the feature name)",
-            figmaFrames: design?.nodes.length ? untrusted("figma-frames", `File: ${design.fileName} (${design.fileKey ?? "file key unavailable"})\n${design.prompt}\n${design.nodes.map((n) => `- ${n.name} (${n.nodeId})`).join("\n")}`) : "Không có",
+            uiFiles: ui?.filesChanged.length ? ui.filesChanged.map((f) => `\n  - ${f}`).join("") : "UI của tính năng này trong project (tìm theo tên tính năng)",
+            uiNotes: notesOf(input, "B1.implement_ui"),
+            figmaFrames: figmaFramesOf(input),
           },
           gate: {
             notEnough: "The BA and the UI built from Figma conflict (see “Mâu thuẫn cần chốt” in the review). Accept to follow the choices the review proposes, or write your decisions as a feature prompt addition of this step (or import a newer BA) and run it again.",

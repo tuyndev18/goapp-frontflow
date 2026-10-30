@@ -1,9 +1,10 @@
 import { hashJson } from "@frontflow/domain";
 import { escapeMarkdownText } from "@frontflow/document-parser";
 import { parseFigmaHandoff, type FigmaHandoff } from "@frontflow/figma-mcp-bridge";
-import { NodeError, type NodeHandler } from "@frontflow/workflow-engine";
+import { NodeError, type NodeHandler, type NodeInput } from "@frontflow/workflow-engine";
+import { untrusted } from "../prompts.js";
 import type { NodeServices } from "../services.js";
-import { plural, projectOf, runInputs, saveArtifact } from "../util.js";
+import { optionalUpstream, plural, projectOf, runInputs, saveArtifact } from "../util.js";
 
 /**
  * What the run knows about the design: the layers the GoApp Figma plugin pushed. FrontFlow does not
@@ -21,6 +22,13 @@ export interface FigmaDesignOutput {
   prompt: string;
   snapshotHash: string;
   snapshotArtifactId: string;
+}
+
+/** The selected frames for a prompt (file identity, the plugin's prompt, frame ids), or "Không có". */
+export function figmaFramesOf(input: NodeInput): string {
+  const design = optionalUpstream<FigmaDesignOutput>(input, "B1.figma_scope");
+  if (!design?.nodes.length) return "Không có";
+  return untrusted("figma-frames", `File: ${design.fileName} (${design.fileKey ?? "file key unavailable"})\n${design.prompt}\n${design.nodes.map((n) => `- ${n.name} (${n.nodeId})`).join("\n")}`);
 }
 
 const WAITING =

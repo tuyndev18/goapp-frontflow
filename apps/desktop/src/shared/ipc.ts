@@ -11,6 +11,7 @@ import type {
   WorkflowRun,
 } from "@frontflow/domain";
 import type { FigmaHandoff } from "@frontflow/figma-mcp-bridge";
+import type { FloMood } from "@frontflow/ui-components";
 
 /**
  * Typed IPC contract between renderer and main (spec §9). Every request payload
@@ -35,6 +36,11 @@ const laneSchema = z.object({
   subtitle: z.string().max(300).optional(),
   groups: z.array(z.string().max(64)).max(20).optional(),
 });
+
+// Main must not bundle the React package for a list, so the moods are repeated here; `satisfies` keeps them in step.
+const floMood = z.enum(["idle", "thinking", "reading", "coding", "testing", "waiting", "retrying", "paused", "passed", "assumed", "blocked", "failed"] as const satisfies readonly FloMood[]);
+const floTarget = z.object({ projectId: id, runId: id, nodeId: id.optional() });
+const screenCoord = z.number().int().min(-100_000).max(100_000);
 
 export const uploadedDocumentSchema = z.object({
   name: z.string().min(1).max(260),
@@ -192,7 +198,23 @@ export const requestSchemas = {
     retentionDays: z.number().int().min(1).max(365).optional(),
     allowArbitraryShell: z.boolean().optional(),
     goFigmaServerPath: z.string().max(1024).optional(),
+    showFlo: z.boolean().optional(),
+    floSize: z.enum(["small", "medium", "large"]).optional(),
   }),
+  /** App window → what Flo shows. */
+  "flo:update": z.object({ mood: floMood, title: z.string().max(200), detail: z.string().max(600).optional(), target: floTarget.optional() }),
+  /** Flo's window: what to show when it loads. */
+  "flo:state": z.void(),
+  /** Flo's window: how to draw itself (size) when it loads. */
+  "flo:config": z.void(),
+  /** Flo's window: open the step Flo is about in the app window. */
+  "flo:open": z.void(),
+  /** Flo's window, while dragged: its new top-left corner on screen. */
+  "flo:moveTo": z.object({ x: screenCoord, y: screenCoord }),
+  /** Flo's window: its content's size, so the window hugs it. */
+  "flo:resize": z.object({ width: z.number().int().min(16).max(800), height: z.number().int().min(16).max(600) }),
+  /** Flo's window: hide Flo until Show Flo (sidebar or Settings) brings it back. */
+  "flo:hide": z.void(),
 } as const;
 
 export type IpcChannel = keyof typeof requestSchemas;
@@ -610,6 +632,42 @@ export interface SettingsDto {
   allowArbitraryShell: boolean;
   /** Path of go-figma's dist/mcp.mjs; empty = use the goapp-figma entry of an agent config. */
   goFigmaServerPath: string;
+  /** Flo, the floating mascot window. */
+  showFlo: boolean;
+  floSize: FloSize;
+}
+
+/** Flo's size: its pixel art drawn at 2×, 3× or 4×. */
+export type FloSize = "small" | "medium" | "large";
+
+export interface FloConfigDto {
+  size: FloSize;
+}
+
+export interface FloTargetDto {
+  projectId: string;
+  runId: string;
+  nodeId?: string;
+}
+
+/** What Flo shows: its mood, the step or run it is about, and that step's latest activity. */
+export interface FloStateDto {
+  mood: FloMood;
+  title: string;
+  detail?: string;
+  target?: FloTargetDto;
+}
+
+/** The only API Flo's window gets (its own preload), instead of the app's full FrontflowApi. */
+export interface FloApi {
+  state(): Promise<FloStateDto | null>;
+  onState(listener: (state: FloStateDto) => void): () => void;
+  config(): Promise<FloConfigDto>;
+  onConfig(listener: (config: FloConfigDto) => void): () => void;
+  open(): Promise<void>;
+  moveTo(x: number, y: number): Promise<void>;
+  resize(width: number, height: number): Promise<void>;
+  hide(): Promise<void>;
 }
 
 export interface IpcResponses {
@@ -684,6 +742,13 @@ export interface IpcResponses {
   "workflows:delete": void;
   "settings:get": SettingsDto;
   "settings:update": SettingsDto;
+  "flo:update": void;
+  "flo:state": FloStateDto | null;
+  "flo:config": FloConfigDto;
+  "flo:open": void;
+  "flo:moveTo": void;
+  "flo:resize": void;
+  "flo:hide": void;
 }
 
 /** Push channels main → renderer. */
@@ -699,6 +764,14 @@ export interface IpcPushEvents {
   "approval:requested": ApprovalDto;
   "terminal:data": { terminalId: string; data: string };
   "terminal:exit": { terminalId: string; exitCode: number | null };
+  /** To Flo's window only. */
+  "flo:state": FloStateDto;
+  /** To Flo's window only: its size changed in Settings. */
+  "flo:config": FloConfigDto;
+  /** Flo's card was clicked: open this run (and step) in the app window. */
+  "flo:open": FloTargetDto;
+  /** Flo was shown or hidden (from its own window, the sidebar or Settings). */
+  "flo:visibility": { visible: boolean };
 }
 export type IpcPushChannel = keyof IpcPushEvents;
 
@@ -720,6 +793,10 @@ export const PUSH_CHANNELS: readonly IpcPushChannel[] = [
   "approval:requested",
   "terminal:data",
   "terminal:exit",
+  "flo:state",
+  "flo:config",
+  "flo:open",
+  "flo:visibility",
 ];
 
 export type { PolicyDecision, TestResult };

@@ -18,6 +18,7 @@ import { ApprovalsBar } from "./components/ApprovalsBar.js";
 import { BrandMark } from "./components/BrandMark.js";
 import { NavIcon, type NavIconName } from "./components/NavIcon.js";
 import { setThemePreference, useTheme, type ThemePreference } from "./lib/theme.js";
+import { wireFlo } from "./lib/floBridge.js";
 
 export function App() {
   const screen = useApp((s) => s.screen);
@@ -48,6 +49,7 @@ export function App() {
 
   useEffect(() => {
     wirePushEvents();
+    wireFlo();
     void useApp.getState().refreshApprovals();
   }, []);
 
@@ -120,6 +122,7 @@ export function App() {
           <NavButton active={screen.name === "settings"} onClick={() => navigate({ name: "settings" })} icon="settings">
             Settings
           </NavButton>
+          <FloSwitch />
           <ThemeSwitcher />
         </div>
       </nav>
@@ -149,6 +152,20 @@ export function App() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Shows or hides Flo's floating window: the way back after its × hid it. */
+function FloSwitch() {
+  const visible = useApp((s) => s.floVisible);
+  const setFloVisible = useApp((s) => s.setFloVisible);
+  if (visible === undefined) return null;
+  const label = visible ? "Hide Flo" : "Show Flo";
+  return (
+    <button type="button" className="ff-nav" aria-pressed={visible} title={`${label}, the floating mascot`} onClick={() => void setFloVisible(!visible)}>
+      <NavIcon name="flo" />
+      <span className="ff-nav-label">{label}</span>
+    </button>
   );
 }
 

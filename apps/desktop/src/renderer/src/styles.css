@@ -1,71 +1,75 @@
 /*
- * Design tokens follow skill/design-skills/linear/SKILL.md:
- * near-black canvas with a four-step surface ladder and 1px hairlines for depth (no drop shadows on dark),
- * one scarce accent (Linear lavender) for the primary action, links, focus and the brand mark,
- * a product-style label palette for status and decoration only, Inter at 400–600 with tight display tracking.
- * Dark is the default theme; the light theme mirrors the same roles on a white canvas.
+ * Design tokens — "calm surfaces" (2026 desktop-tool direction):
+ * warm neutral greys, the content sits on an inset rounded panel beside a recessed sidebar,
+ * soft layered surfaces (hairline + faint top highlight on dark, a whisper of shadow on light),
+ * one accent (violet) reserved for the primary action, links, focus and selection,
+ * status colours for status only (always with icon + text), line icons instead of emoji,
+ * Inter at 400–600 with tight display tracking. Dark is the default; light mirrors the same roles.
  *
  * Spacing: 4px base (4 · 8 · 12 · 16 · 24 · 32 · 48). Page gutter 32px, panel gutter 24px.
  */
 :root {
   /* Brand */
-  --color-primary: #5e6ad2;
-  --color-primary-active: #4c57c0;
+  --color-primary: #6b5cf0;
+  --color-primary-active: #5a4bdc;
   --color-on-primary: #ffffff;
   --color-secondary: #7a7fad;
 
   /* Label palette (status tones and decoration only) */
   --color-accent-sky: #4ea7fc;
-  --color-accent-purple: #bb87fc;
-  --color-accent-purple-deep: #4b2d7f;
+  --color-accent-purple: #a78bfa;
+  --color-accent-purple-deep: #5b3fb0;
   --color-accent-pink: #e2609e;
-  --color-accent-orange: #f2994a;
+  --color-accent-orange: #f0a04b;
   --color-accent-orange-deep: #7a4512;
   --color-accent-teal: #26b5ce;
-  --color-accent-green: #4cb782;
+  --color-accent-green: #3fb77e;
   --color-accent-brown: #8a6a3d;
 
   /* Surface */
   --color-canvas: #ffffff;
-  --color-canvas-soft: #f7f7f8;
-  --color-hairline: #e6e6e9;
-  --color-input-border: #d8d8dd;
+  --color-canvas-soft: #fafaf9;
+  --color-hairline: #e8e7e4;
+  --color-input-border: #dcdbd7;
 
   /* Text */
-  --color-ink: #1b1c1f;
-  --color-ink-secondary: #3c4149;
-  --color-ink-muted: #6b6f76;
-  --color-ink-faint: #9c9fa4;
+  --color-ink: #18181b;
+  --color-ink-secondary: #3f3f46;
+  --color-ink-muted: #6e6e78;
+  --color-ink-faint: #a1a1aa;
 
   /* Type */
   --font-body: "Inter Variable", "Inter", "SF Pro Display", -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Radius */
-  --rounded-xs: 4px;
-  --rounded-sm: 6px;
-  --rounded-md: 8px;
-  --rounded-lg: 12px;
-  --rounded-xl: 16px;
+  --rounded-xs: 6px;
+  --rounded-sm: 8px;
+  --rounded-md: 10px;
+  --rounded-lg: 14px;
+  --rounded-xl: 20px;
   --rounded-full: 9999px;
 
-  /* Elevation: hairlines carry depth; shadows only lift floating layers (menus, dialogs, toasts). */
-  --shadow-1: 0 1px 2px rgba(16, 17, 20, 0.04), 0 2px 8px rgba(16, 17, 20, 0.05);
-  --shadow-2: 0 0 0 1px rgba(16, 17, 20, 0.06), 0 8px 24px rgba(16, 17, 20, 0.1), 0 24px 48px rgba(16, 17, 20, 0.08);
+  /* Elevation: resting surfaces get a whisper (--shadow-0); floating layers (menus, dialogs, toasts) lift. */
+  --shadow-0: 0 1px 2px rgba(24, 24, 27, 0.04);
+  --shadow-1: 0 1px 2px rgba(24, 24, 27, 0.05), 0 4px 12px -4px rgba(24, 24, 27, 0.08);
+  --shadow-2: 0 0 0 1px rgba(24, 24, 27, 0.06), 0 16px 40px -12px rgba(24, 24, 27, 0.22), 0 4px 10px -4px rgba(24, 24, 27, 0.08);
   /* The faint top-edge highlight of a lifted panel; only visible on dark. */
-  --edge: none;
+  --edge: inset 0 0 0 0 transparent;
 
   /* Layout */
   --page-x: 32px;
-  --page-top: 24px;
-  --panel-x: 24px;
+  --page-top: 28px;
+  --panel-x: 20px;
+  /* Gap around the inset content panel. */
+  --frame: 8px;
 
   /* App roles */
   --bg: var(--color-canvas-soft);
   --surface: var(--color-canvas);
-  --surface-2: #f4f4f6;
-  --surface-3: #ececef;
-  --hover: rgba(20, 22, 30, 0.05);
+  --surface-2: #f4f4f2;
+  --surface-3: #ecebe8;
+  --hover: rgba(24, 24, 27, 0.045);
   --border: var(--color-hairline);
   --border-strong: var(--color-input-border);
   --text: var(--color-ink);
@@ -78,33 +82,44 @@
   --primary-text: var(--color-on-primary);
   /* Status tones come from the label palette, deepened so text stays readable on white. */
   --success: color-mix(in srgb, var(--color-accent-green) 72%, #000);
-  --success-soft: color-mix(in srgb, var(--color-accent-green) 13%, transparent);
+  --success-soft: color-mix(in srgb, var(--color-accent-green) 12%, transparent);
   --success-dot: var(--color-accent-green);
   --info: color-mix(in srgb, var(--color-accent-sky) 68%, #000);
-  --info-soft: color-mix(in srgb, var(--color-accent-sky) 13%, transparent);
+  --info-soft: color-mix(in srgb, var(--color-accent-sky) 12%, transparent);
   --info-dot: var(--color-accent-sky);
-  --warning: color-mix(in srgb, var(--color-accent-orange) 70%, #000);
+  --warning: color-mix(in srgb, var(--color-accent-orange) 66%, #000);
   --warning-soft: color-mix(in srgb, var(--color-accent-orange) 14%, transparent);
   --warning-dot: var(--color-accent-orange);
+  /* Text on a solid --warning-dot fill; the fill is the same orange in both themes, so is this. */
+  --on-warning: #1b1206;
   --danger: #d13f3f;
-  --danger-soft: color-mix(in srgb, #eb5757 12%, transparent);
+  --danger-soft: color-mix(in srgb, #eb5757 11%, transparent);
   --danger-dot: #eb5757;
+  --flo-shadow: rgba(24, 24, 27, 0.14);
+  /* Flo's pixel speech bubble: the sprite's outline ink, a paper fill and its shaded edge. */
+  --flo-ink: #1b1733;
+  --flo-paper: #ffffff;
+  --flo-paper-shade: #e6e2f5;
+  --flo-text: #1b1733;
+  --flo-muted: #5d5780;
+  --font-pixel: "Pixelify Sans", var(--font-body);
   --assumed: color-mix(in srgb, var(--color-accent-pink) 70%, #000);
-  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 13%, transparent);
+  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 12%, transparent);
   --ai: var(--color-accent-purple-deep);
-  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 22%, transparent);
-  --focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
-  --sidebar: var(--color-canvas-soft);
+  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 18%, transparent);
+  --focus: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  /* The recessed frame around the content panel (sidebar + window edge). */
+  --sidebar: #f1f0ed;
   --feed-bg: var(--color-canvas);
   --code-bg: var(--surface-2);
 
   /* Terminals stay dark in both themes */
-  --term-bg: #0f1011;
-  --term-bg-2: #141516;
-  --term-bg-3: #1f2023;
-  --term-line: #23252a;
-  --term-text: #d0d6e0;
-  --term-muted: #8a8f98;
+  --term-bg: #0f0f11;
+  --term-bg-2: #151517;
+  --term-bg-3: #1f1f23;
+  --term-line: #26262b;
+  --term-text: #d4d4d8;
+  --term-muted: #8e8e96;
 
   color-scheme: light;
   font-family: var(--font-body);
@@ -112,46 +127,54 @@
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);
-  background: var(--bg);
+  background: var(--sidebar);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Night mode (the default) — lib/theme.ts sets data-theme on <html> (light / dark / system). */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-primary: #5e6ad2;
-  /* On dark the hover state lightens, as Linear's CTA does. */
-  --color-primary-active: #828fff;
-  --bg: #010102;
-  --surface: #0f1011;
-  --surface-2: #141516;
-  --surface-3: #1c1d1f;
-  --hover: rgba(255, 255, 255, 0.045);
-  --border: #23252a;
-  --border-strong: #34363c;
-  --text: #f7f8f8;
-  --text-body: #d0d6e0;
-  --muted: #8a8f98;
-  --muted-soft: #62666d;
-  --primary-soft: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  --success: #4cb782;
-  --success-soft: color-mix(in srgb, var(--color-accent-green) 15%, transparent);
-  --info: #4ea7fc;
-  --info-soft: color-mix(in srgb, var(--color-accent-sky) 15%, transparent);
-  --warning: #f2994a;
-  --warning-soft: color-mix(in srgb, var(--color-accent-orange) 15%, transparent);
-  --danger: #eb5757;
-  --danger-soft: color-mix(in srgb, #eb5757 15%, transparent);
+  --color-primary: #7a6cff;
+  /* On dark the hover state lightens. */
+  --color-primary-active: #9488ff;
+  --bg: #0e0e10;
+  --surface: #141416;
+  --surface-2: #19191c;
+  --surface-3: #222226;
+  --hover: rgba(255, 255, 255, 0.05);
+  --border: #242428;
+  --border-strong: #333338;
+  --text: #f4f4f5;
+  --text-body: #d4d4d8;
+  --muted: #8e8e96;
+  --muted-soft: #5f5f68;
+  --primary-soft: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --success: #4cc38a;
+  --success-soft: color-mix(in srgb, var(--color-accent-green) 14%, transparent);
+  --info: #5cb0ff;
+  --info-soft: color-mix(in srgb, var(--color-accent-sky) 14%, transparent);
+  --warning: #f5ae5f;
+  --warning-soft: color-mix(in srgb, var(--color-accent-orange) 14%, transparent);
+  --danger: #f06a6a;
+  --danger-soft: color-mix(in srgb, #eb5757 14%, transparent);
   --assumed: #f087bd;
-  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 16%, transparent);
-  --ai: var(--color-accent-purple);
-  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 16%, transparent);
-  --focus: color-mix(in srgb, #5e69d1 60%, transparent);
-  --sidebar: #010102;
-  --feed-bg: #0f1011;
-  --code-bg: #141516;
-  --shadow-1: 0 0 0 1px #23252a, 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-2: 0 0 0 1px #2a2c31, 0 16px 48px rgba(0, 0, 0, 0.6);
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  --flo-shadow: rgba(0, 0, 0, 0.45);
+  --flo-ink: #0b0916;
+  --flo-paper: #2a2446;
+  --flo-paper-shade: #211c39;
+  --flo-text: #f0eefa;
+  --flo-muted: #aaa4c9;
+  --assumed-soft: color-mix(in srgb, var(--color-accent-pink) 15%, transparent);
+  --ai: #b9a4ff;
+  --ai-soft: color-mix(in srgb, var(--color-accent-purple) 15%, transparent);
+  --focus: color-mix(in srgb, #7a6cff 60%, transparent);
+  --sidebar: #08080a;
+  --feed-bg: #141416;
+  --code-bg: #19191c;
+  --shadow-0: none;
+  --shadow-1: 0 0 0 1px #242428, 0 6px 16px -6px rgba(0, 0, 0, 0.5);
+  --shadow-2: 0 0 0 1px #2c2c31, 0 24px 56px -12px rgba(0, 0, 0, 0.7);
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 * {
@@ -161,8 +184,23 @@
 }
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--sidebar);
   color: var(--text-body);
+}
+::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: var(--rounded-full);
+  background: var(--border-strong) padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 :focus-visible {
   outline: 2px solid var(--focus);
@@ -175,15 +213,15 @@ h3 {
   font-weight: 600;
 }
 h1 {
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1.2;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.6px;
   margin: 0;
 }
 h2 {
   font-size: 16px;
   line-height: 1.3;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.25px;
   margin: 0 0 16px;
 }
 h3 {
@@ -212,14 +250,15 @@ a {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
   height: 100vh;
+  background: var(--sidebar);
 }
+/* The sidebar is part of the recessed frame; the content floats beside it on an inset panel. */
 .ff-sidebar {
   background: var(--sidebar);
-  border-right: 1px solid var(--border);
-  padding: var(--page-top) 8px 16px;
+  padding: 16px 8px 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   min-height: 0;
   overflow: auto;
 }
@@ -245,8 +284,11 @@ a {
   color: var(--text);
 }
 .ff-brand small {
+  overflow: hidden;
   font-size: 12px;
   color: var(--muted-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ff-nav-section {
   display: flex;
@@ -255,9 +297,10 @@ a {
 }
 .ff-nav-heading {
   padding: 0 12px 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.125px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
   color: var(--muted-soft);
 }
 .ff-nav-project {
@@ -273,23 +316,29 @@ a {
   text-align: left;
   background: transparent;
   border: 0;
-  padding: 6px 12px;
-  border-radius: var(--rounded-sm);
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: var(--rounded-md);
   color: var(--muted);
   cursor: pointer;
   font: inherit;
   font-size: 14px;
   font-weight: 500;
+  transition: background 0.12s, color 0.12s;
 }
 .ff-nav:hover {
   background: var(--hover);
   color: var(--text);
 }
-/* Selected = surface lift, as in Linear's sidebar; lavender stays for actions and focus. */
+/* Selected = a raised pill (the same surface as the content panel) with the accent on its icon only. */
 .ff-nav-active,
 .ff-nav-active:hover {
-  background: var(--surface-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-0), inset 0 0 0 1px var(--border), var(--edge);
   color: var(--text);
+}
+.ff-nav-active .ff-nav-icon {
+  color: var(--primary);
 }
 .ff-nav-sub {
   width: calc(100% - 12px);
@@ -304,7 +353,6 @@ a {
 .ff-nav-bottom {
   margin-top: auto;
   padding-top: 12px;
-  border-top: 1px solid var(--border);
 }
 .ff-theme-switch {
   padding-top: 8px;
@@ -404,7 +452,10 @@ a {
 }
 .ff-app-collapsed .ff-nav {
   justify-content: center;
-  padding: 8px 0;
+  width: 40px;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0;
 }
 .ff-app-collapsed .ff-nav-label {
   position: absolute;
@@ -415,21 +466,30 @@ a {
   white-space: nowrap;
 }
 .ff-app-collapsed .ff-nav-sub {
-  width: 100%;
-  margin-left: 0;
-  border-radius: var(--rounded-sm);
+  width: 40px;
+  margin-left: auto;
+  border-radius: var(--rounded-md);
   box-shadow: none;
+}
+.ff-app-collapsed .ff-nav-sub.ff-nav-active {
+  box-shadow: var(--shadow-0), inset 0 0 0 1px var(--border), var(--edge);
 }
 .ff-app-collapsed .ff-nav-section + .ff-nav-section:not(.ff-nav-bottom) {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+/* Inset content panel: a rounded sheet on the recessed frame, scrolling on its own. */
 .ff-main {
   overflow: auto;
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  margin: var(--frame) var(--frame) var(--frame) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-lg);
+  background: var(--bg);
+  box-shadow: var(--shadow-0), var(--edge);
 }
 
 /* ---------- Page structure ---------- */
@@ -443,12 +503,15 @@ a {
   justify-content: space-between;
   align-items: flex-end;
   gap: 24px;
-  margin-bottom: 24px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 28px;
 }
 .ff-screen-header > div:first-child {
   min-width: 0;
+}
+/* Header actions stay on one row beside the title instead of stacking when the intro is long. */
+.ff-screen-header > .ff-actions {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 .ff-screen-header p {
   margin: 4px 0 0;
@@ -544,7 +607,7 @@ a {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
-  box-shadow: var(--edge);
+  box-shadow: var(--shadow-0), var(--edge);
   padding: 24px;
   margin: 0 0 24px;
 }
@@ -588,8 +651,10 @@ a {
   gap: 12px;
 }
 .ff-empty-icon {
-  font-size: 32px;
+  display: inline-flex;
   margin-bottom: 8px;
+  color: var(--muted-soft);
+  font-size: 32px;
 }
 .ff-muted {
   color: var(--muted);
@@ -633,19 +698,22 @@ a {
   gap: 6px;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--rounded-md);
-  background: var(--surface);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-0), var(--edge);
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
 }
 .ff-btn:hover:not(:disabled) {
-  background: var(--hover);
+  background: var(--surface-3);
+  border-color: var(--border-strong);
 }
 .ff-btn:active:not(:disabled) {
   transform: scale(0.97);
@@ -659,9 +727,11 @@ a {
   padding: 0 10px;
   font-size: 13px;
 }
+/* The one accent: a solid fill with a soft top highlight so it reads as the next step. */
 .ff-btn-primary {
   border-color: var(--primary);
   background: var(--primary);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.18);
   color: var(--primary-text);
 }
 .ff-btn-primary:hover:not(:disabled),
@@ -701,13 +771,17 @@ a {
 .ff-icon-btn:hover {
   opacity: 1;
   background: var(--danger-soft);
+  color: var(--danger);
 }
 .ff-btn-ghost {
   border-color: transparent;
   background: transparent;
+  box-shadow: none;
   color: var(--muted);
 }
 .ff-btn-ghost:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -726,7 +800,7 @@ a {
   min-width: 180px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: var(--rounded-md);
+  border-radius: var(--rounded-lg);
   background: var(--surface);
   box-shadow: var(--shadow-2);
   font-family: var(--font-body);
@@ -780,26 +854,45 @@ a {
 .ff-input {
   height: 32px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--rounded-xs);
+  border-radius: var(--rounded-sm);
   background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 14px;
   line-height: 1.33;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 textarea.ff-input {
   height: auto;
 }
+.ff-input:hover:not(:disabled):not(:focus) {
+  border-color: color-mix(in srgb, var(--border-strong) 60%, var(--muted));
+}
 .ff-input:focus,
 .ff-input:focus-visible {
   outline: none;
-  border-color: var(--border-strong);
-  box-shadow: 0 0 0 2px var(--focus);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 .ff-input::placeholder {
   color: var(--muted-soft);
+}
+/* Selects drop the native Windows arrow for a chevron drawn with two gradients (no image, follows the theme). */
+select.ff-input {
+  appearance: none;
+  padding-right: 32px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 52%,
+    calc(100% - 11px) 52%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+select.ff-input:disabled {
+  cursor: not-allowed;
 }
 .ff-input-lg {
   height: 40px;
@@ -897,8 +990,8 @@ input[type="radio"] {
   align-items: center;
   gap: 5px;
   height: 24px;
-  padding: 0 8px;
-  border-radius: var(--rounded-sm);
+  padding: 0 10px;
+  border-radius: var(--rounded-full);
   background: var(--hover);
   font-size: 12px;
   font-weight: 600;
@@ -1747,23 +1840,43 @@ input[type="radio"] {
   justify-content: space-between;
   align-items: flex-end;
   gap: 24px;
-  padding: 16px var(--page-x) 10px;
+  padding: 20px var(--page-x) 14px;
 }
 .ff-run-title {
   min-width: 0;
 }
-.ff-run-title h1 {
-  margin: 0 0 4px;
-  font-size: 22px;
+.ff-run-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+.ff-run-heading h1 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ff-run-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 16px;
-  min-height: 24px;
+  min-height: 22px;
   font-size: 13px;
   color: var(--muted);
+}
+.ff-meta-item .ff-step-icon {
+  margin-right: 2px;
+  vertical-align: -2px;
+}
+.ff-meta-item + .ff-meta-item::before {
+  content: "·";
+  margin-right: 16px;
+  color: var(--muted-soft);
 }
 .ff-meta-item {
   white-space: nowrap;
@@ -1781,18 +1894,57 @@ input[type="radio"] {
   font-weight: 500;
 }
 .ff-progress {
-  padding: 0 var(--page-x) 10px;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 16px;
+  padding: 0 var(--page-x) 4px;
 }
 .ff-progress-track {
+  flex: 1;
   display: flex;
-  gap: 3px;
+  gap: 2px;
+  min-width: 0;
 }
 .ff-progress-seg {
   flex: 1;
-  height: 6px;
+  height: 4px;
   border-radius: var(--rounded-full);
   background: var(--surface-3);
+}
+/* "Waiting for you" banner under the header: the one place that says what to do next. */
+.ff-run-attention {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 12px var(--page-x) 0;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--warning-dot) 30%, var(--border));
+  border-radius: var(--rounded-lg);
+  background: var(--warning-soft);
+  color: var(--text-body);
+  font-size: 13px;
+}
+.ff-run-attention-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--warning-dot);
+  color: var(--on-warning);
+  font-size: 10px;
+}
+.ff-run-attention-text {
+  flex: 1;
+  min-width: 160px;
+}
+.ff-run-attention-text strong {
+  color: var(--warning);
+  font-weight: 600;
 }
 .ff-progress-success {
   background: var(--success-dot);
@@ -1813,9 +1965,9 @@ input[type="radio"] {
 .ff-progress-legend {
   display: flex;
   flex-wrap: wrap;
+  flex-shrink: 0;
   align-items: center;
-  gap: 4px 16px;
-  margin-top: 8px;
+  gap: 4px 14px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -1845,8 +1997,10 @@ input[type="radio"] {
 }
 .ff-callout {
   margin: 16px var(--panel-x) 0;
-  padding: 12px 16px;
-  border-radius: var(--rounded-md);
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--rounded-lg);
+  background: var(--surface-2);
   color: var(--text);
 }
 .ff-callout p {
@@ -1856,10 +2010,58 @@ input[type="radio"] {
   margin: 0;
 }
 .ff-callout-warning {
+  border-color: color-mix(in srgb, var(--warning-dot) 30%, var(--border));
   background: var(--warning-soft);
 }
 .ff-callout-danger {
+  border-color: color-mix(in srgb, var(--danger-dot) 30%, var(--border));
   background: var(--danger-soft);
+}
+/* An input panel inside a callout is part of it, not a box in a box. */
+.ff-callout .ff-input-panel {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.ff-doc-update {
+  padding: 0;
+}
+.ff-doc-update > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--rounded-lg);
+  color: var(--text-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.ff-doc-update > summary::-webkit-details-marker {
+  display: none;
+}
+.ff-doc-update > summary::after {
+  content: "▸";
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.ff-doc-update[open] > summary::after {
+  transform: rotate(90deg);
+}
+.ff-doc-update > summary:hover {
+  background: var(--hover);
+}
+.ff-doc-update > summary .ff-step-icon {
+  color: var(--muted);
+}
+.ff-doc-update[open] {
+  padding-bottom: 16px;
+}
+.ff-doc-update > :not(summary) {
+  margin-right: 16px;
+  margin-left: 16px;
 }
 .ff-callout .ff-link {
   margin-right: 12px;
@@ -1874,7 +2076,7 @@ input[type="radio"] {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(320px, 1fr) 12px minmax(380px, var(--panel-w));
-  padding: 12px var(--page-x) 16px;
+  padding: 14px var(--page-x) 16px;
 }
 .ff-run-split-panel {
   grid-template-columns: minmax(0, 1fr);
@@ -1934,13 +2136,6 @@ input[type="radio"] {
   background: var(--surface-3);
   color: var(--text);
 }
-.ff-run-waiting {
-  color: var(--warning);
-  font-weight: 500;
-}
-.ff-run-waiting .ff-link {
-  margin: 0 0 0 4px;
-}
 .ff-run-main {
   min-width: 0;
   min-height: 0;
@@ -1950,6 +2145,7 @@ input[type="radio"] {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
+  box-shadow: var(--shadow-0), var(--edge);
 }
 
 .ff-lane-dot {
@@ -1959,35 +2155,40 @@ input[type="radio"] {
   height: 8px;
   border-radius: 50%;
 }
-/* tabs — underline, text edge aligned with the panel gutter */
+/* tabs — soft pills; the selected one is a raised chip, the accent stays for actions */
 .ff-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 2px;
 }
 .ff-tabs-flush {
   flex-shrink: 0;
-  padding: 0 var(--panel-x);
+  padding: 8px calc(var(--panel-x) - 8px);
   border-bottom: 1px solid var(--border);
 }
 .ff-tab {
-  margin-bottom: -1px;
-  padding: 12px 0 10px;
+  height: 30px;
+  padding: 0 12px;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--rounded-sm);
   background: none;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
+  font-size: 13.5px;
   font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
 }
 .ff-tab:hover {
+  background: var(--hover);
   color: var(--text);
 }
 .ff-tab-active,
 .ff-tab-active:hover {
+  background: var(--surface-3);
+  box-shadow: var(--edge);
   color: var(--text);
-  border-bottom-color: var(--primary);
 }
 
 /* activity feed */
@@ -2029,13 +2230,14 @@ input[type="radio"] {
   display: flex;
   flex-direction: column;
 }
-/* The header and callouts take at most 40% of the panel, so the tabs and their body keep the rest.
-   Only the callouts (input, failure, uploads) shrink and scroll: the header's menus would be clipped. */
+/* The header and callouts take at most 60% of the panel (enough for an import form without scrolling),
+   so the tabs and their body keep the rest. Only the callouts (input, failure, uploads) shrink and
+   scroll: the header's menus would be clipped. */
 .ff-detail-top {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  max-height: 40%;
+  max-height: 60%;
 }
 .ff-detail-callouts {
   flex: 0 1 auto;
@@ -2391,6 +2593,7 @@ input[type="radio"] {
   border: 1px solid var(--border);
   border-radius: var(--rounded-lg);
   background: var(--surface);
+  box-shadow: var(--shadow-0), var(--edge);
 }
 .ff-canvas-head {
   display: flex;
@@ -2476,11 +2679,12 @@ input[type="radio"] {
   cursor: default;
   pointer-events: none !important;
 }
+/* Lanes are quiet bands: a faint tint of their colour, which only shows at full strength as the title dot. */
 .ff-lane {
   position: relative;
-  border: 1px dashed color-mix(in srgb, var(--lane) 45%, transparent);
-  border-radius: var(--rounded-lg);
-  background: color-mix(in srgb, var(--lane) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--lane) 16%, var(--border));
+  border-radius: var(--rounded-xl);
+  background: color-mix(in srgb, var(--lane) 4%, transparent);
 }
 .ff-lane-headers {
   position: absolute;
@@ -2499,19 +2703,29 @@ input[type="radio"] {
   flex-direction: column;
   justify-content: center;
   gap: 4px;
-  padding: 0 10px;
+  padding: 0 14px;
   overflow: hidden;
-  border-left: 4px solid var(--lane);
-  border-radius: var(--rounded-lg) 0 0 var(--rounded-lg);
-  background: color-mix(in srgb, var(--lane) 12%, var(--surface));
-  box-shadow: 1px 0 0 color-mix(in srgb, var(--lane) 35%, transparent);
+  border-radius: var(--rounded-xl) 0 0 var(--rounded-xl);
+  background: color-mix(in srgb, var(--lane) 6%, var(--surface));
+  box-shadow: 1px 0 0 color-mix(in srgb, var(--lane) 14%, var(--border));
   font-size: 13px;
   line-height: 1.3;
   overflow-wrap: normal;
   word-break: normal;
 }
 .ff-lane-label strong {
-  color: var(--text-body);
+  color: var(--text);
+  font-weight: 600;
+}
+.ff-lane-label strong::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--lane);
+  vertical-align: 1px;
 }
 .ff-lane-label span {
   color: var(--muted);
@@ -2539,21 +2753,22 @@ input[type="radio"] {
   align-items: center;
   justify-content: center;
   margin-bottom: 4px;
-  border: 2px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-1);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-1), var(--edge);
   transition: box-shadow 0.15s, border-color 0.15s;
 }
 .ff-gnode:hover .ff-gnode-card {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--lane) 22%, transparent), var(--shadow-1);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--lane) 18%, transparent), var(--shadow-1);
 }
 /* Steps that wait for something only you can give look like n8n triggers. */
 .ff-gnode-input .ff-gnode-card {
-  border-radius: 30px 12px 12px 30px;
+  border-radius: 30px 16px 16px 30px;
 }
 .ff-gnode-icon {
-  font-size: 26px;
+  display: inline-flex;
+  color: var(--text-body);
   line-height: 1;
 }
 .ff-gnode-status {
@@ -2577,13 +2792,21 @@ input[type="radio"] {
   top: -9px;
   left: -6px;
   padding: 0 5px;
+  border: 1px solid var(--border-strong);
   border-radius: var(--rounded-full);
-  background: var(--warning);
-  color: #fff;
+  background: var(--surface);
+  color: var(--text-body);
   font-size: 9px;
   font-weight: 600;
-  line-height: 15px;
+  letter-spacing: 0.4px;
+  line-height: 14px;
   text-transform: uppercase;
+}
+/* Only a step actually waiting on you keeps the warm "you" tag. */
+.ff-gnode-warning .ff-gnode-you {
+  border-color: transparent;
+  background: var(--warning-dot);
+  color: var(--on-warning);
 }
 .ff-gnode-chips {
   position: absolute;
@@ -2720,7 +2943,7 @@ input[type="radio"] {
 }
 /* state = card ring + status badge, like n8n's execution ring */
 .ff-gnode-success .ff-gnode-card {
-  border-color: var(--success-dot);
+  border-color: color-mix(in srgb, var(--success-dot) 55%, var(--border));
 }
 .ff-gnode-success .ff-gnode-status {
   background: var(--success-dot);
@@ -2771,10 +2994,26 @@ input[type="radio"] {
 .ff-gnode-muted .ff-gnode-card {
   border-style: dashed;
 }
+.ff-gnode-neutral .ff-gnode-card,
+.ff-gnode-muted .ff-gnode-card {
+  background: var(--surface);
+  box-shadow: none;
+}
 .ff-gnode-neutral .ff-gnode-icon,
 .ff-gnode-muted .ff-gnode-icon {
-  opacity: 0.55;
-  filter: grayscale(0.6);
+  color: var(--muted-soft);
+}
+.ff-gnode-success .ff-gnode-icon {
+  color: var(--success);
+}
+.ff-gnode-info .ff-gnode-icon {
+  color: var(--info);
+}
+.ff-gnode-warning .ff-gnode-icon {
+  color: var(--warning);
+}
+.ff-gnode-danger .ff-gnode-icon {
+  color: var(--danger);
 }
 .ff-gnode.ff-gnode-selected .ff-gnode-card {
   border-color: var(--primary);
@@ -2797,10 +3036,6 @@ input[type="radio"] {
 }
 .ff-canvas-key i {
   font-style: normal;
-}
-.ff-canvas-progress {
-  color: var(--text-body);
-  font-weight: 600;
 }
 .ff-canvas-follow {
   flex-shrink: 0;
@@ -2848,6 +3083,16 @@ input[type="radio"] {
 }
 .react-flow {
   --xy-background-color: var(--feed-bg);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-3);
+  --xy-controls-button-color: var(--text-body);
+  --xy-controls-button-color-hover: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: var(--shadow-1);
+}
+.react-flow__controls {
+  overflow: hidden;
+  border-radius: var(--rounded-md);
 }
 
 /* ---------- Approvals, toast, dialog ---------- */
@@ -3123,7 +3368,7 @@ input[type="radio"] {
   padding: 16px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--rounded-md);
-  background: var(--surface-2);
+  background: var(--surface);
   cursor: pointer;
 }
 .ff-dropzone:hover,
@@ -3143,7 +3388,11 @@ input[type="radio"] {
   cursor: pointer;
 }
 .ff-dropzone-icon {
-  font-size: 22px;
+  display: inline-flex;
+  color: var(--muted);
+}
+.ff-dropzone-filled .ff-dropzone-icon {
+  color: var(--success);
 }
 .ff-dropzone-text {
   display: flex;
@@ -3163,8 +3412,25 @@ input[type="radio"] {
 .ff-selection .ff-tag {
   margin-left: 0;
 }
-.ff-new-feature {
-  max-width: 640px;
+/* Form | how it runs: the create button stays in view, the explanation sits beside it. */
+.ff-new-feature-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 640px) minmax(280px, 420px);
+  gap: 24px;
+  align-items: start;
+}
+.ff-new-feature-aside {
+  position: sticky;
+  top: var(--page-top);
+  margin: 0;
+}
+@media (max-width: 1100px) {
+  .ff-new-feature-layout {
+    grid-template-columns: minmax(0, 640px);
+  }
+  .ff-new-feature-aside {
+    position: static;
+  }
 }
 .ff-form.ff-card {
   margin: 0;
@@ -3175,10 +3441,11 @@ input[type="radio"] {
 .ff-next-steps {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   margin: 0;
   padding-left: 20px;
   color: var(--muted);
+  line-height: 1.55;
 }
 .ff-next-steps strong {
   color: var(--text);
@@ -3195,7 +3462,7 @@ input[type="radio"] {
 .ff-seg-btn {
   padding: 4px 12px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--rounded-sm);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -3208,8 +3475,8 @@ input[type="radio"] {
 }
 .ff-seg-active,
 .ff-seg-active:hover {
-  background: var(--surface-3);
-  box-shadow: var(--edge);
+  background: var(--surface);
+  box-shadow: var(--shadow-1), var(--edge);
   color: var(--text);
 }
 .ff-session-pane {
@@ -4627,6 +4894,9 @@ input[type="radio"] {
 .ff-wf-chip:hover {
   background: var(--surface-3);
 }
+.ff-wf-chip .ff-step-icon {
+  color: var(--muted);
+}
 .ff-wf-chip:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
@@ -5274,11 +5544,187 @@ button.ff-wf-problem:hover {
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--rounded-md);
+  box-shadow: var(--shadow-1);
+}
+/* Sits left of the zoom controls in the same corner. */
+.react-flow__panel.ff-minimap {
+  margin-right: 56px;
 }
 .ff-minimap svg {
   display: block;
   width: 168px;
   height: 104px;
+}
+/* Flo, the pixel mascot, in its own transparent always-on-top window (main/flo-window.ts):
+   a pixel-art speech bubble above Flo. The window hugs .ff-flo, anchored bottom-right.
+   One art pixel = --flo-px (2, 3 or 4px: the sprite's scale, set from Settings → Flo → Size). */
+html.ff-flo-page,
+html.ff-flo-page body {
+  overflow: hidden;
+  background: transparent;
+}
+.ff-flo {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  /* Sized by its content, not the window, so it can report the size the window should become. */
+  width: max-content;
+  padding: 6px;
+  user-select: none;
+}
+.ff-flo-bubble {
+  --p: var(--flo-px, 3px);
+  position: relative;
+  /* Room for the frame (1 art pixel each side) and the tail (5) drawn outside the box. */
+  margin: var(--p) var(--p) calc(var(--p) * 5);
+  background: var(--flo-paper);
+  /* Four 1-pixel offsets with no blur draw a frame with notched corners: a pixel-art rounded box. */
+  box-shadow:
+    inset calc(var(--p) * -1) 0 0 0 var(--flo-paper-shade),
+    0 calc(var(--p) * -1) 0 0 var(--flo-ink),
+    0 var(--p) 0 0 var(--flo-ink),
+    calc(var(--p) * -1) 0 0 0 var(--flo-ink),
+    var(--p) 0 0 0 var(--flo-ink);
+}
+/* The tail: a staircase of art pixels pointing down at Flo's head (20 art pixels from its right edge). */
+.ff-flo-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: calc(var(--p) * 19);
+  width: var(--p);
+  height: var(--p);
+  background: var(--flo-ink);
+  box-shadow:
+    var(--p) 0 var(--flo-paper),
+    calc(var(--p) * 2) 0 var(--flo-paper),
+    calc(var(--p) * 3) 0 var(--flo-paper),
+    calc(var(--p) * 4) 0 var(--flo-ink),
+    var(--p) var(--p) var(--flo-ink),
+    calc(var(--p) * 2) var(--p) var(--flo-paper),
+    calc(var(--p) * 3) var(--p) var(--flo-paper),
+    calc(var(--p) * 4) var(--p) var(--flo-ink),
+    calc(var(--p) * 2) calc(var(--p) * 2) var(--flo-ink),
+    calc(var(--p) * 3) calc(var(--p) * 2) var(--flo-paper),
+    calc(var(--p) * 4) calc(var(--p) * 2) var(--flo-ink),
+    calc(var(--p) * 3) calc(var(--p) * 3) var(--flo-ink),
+    calc(var(--p) * 4) calc(var(--p) * 3) var(--flo-ink),
+    calc(var(--p) * 4) calc(var(--p) * 4) var(--flo-ink);
+}
+.ff-flo-bubble-body {
+  display: grid;
+  gap: 3px;
+  width: 252px;
+  padding: 9px 30px 9px 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--flo-text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ff-flo-bubble-body[aria-disabled="true"] {
+  cursor: default;
+}
+.ff-flo-mood {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 12px/1 var(--font-pixel);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--flo-muted);
+}
+/* Square, like a sprite pixel: the mood's colour, beside its name. */
+.ff-flo-mood-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+}
+.ff-flo-mood-idle,
+.ff-flo-mood-thinking {
+  background: var(--color-accent-purple);
+}
+.ff-flo-mood-reading,
+.ff-flo-mood-coding,
+.ff-flo-mood-testing,
+.ff-flo-mood-retrying {
+  background: var(--info-dot);
+}
+.ff-flo-mood-waiting,
+.ff-flo-mood-blocked {
+  background: var(--warning-dot);
+}
+.ff-flo-mood-paused {
+  background: var(--muted);
+}
+.ff-flo-mood-passed {
+  background: var(--success-dot);
+}
+.ff-flo-mood-assumed {
+  background: var(--assumed);
+}
+.ff-flo-mood-failed {
+  background: var(--danger-dot);
+}
+.ff-flo-title {
+  overflow: hidden;
+  font: 700 16px/1.2 var(--font-pixel);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ff-flo-detail {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--flo-muted);
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ff-flo-close {
+  position: absolute;
+  top: 6px;
+  right: 9px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: 700 14px/1 var(--font-pixel);
+  color: var(--flo-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+.ff-flo-bubble:hover .ff-flo-close,
+.ff-flo-close:focus-visible {
+  opacity: 1;
+}
+.ff-flo-close:hover {
+  color: var(--flo-text);
+  background: var(--flo-paper-shade);
+}
+.ff-flo-toggle {
+  padding: 0;
+  line-height: 0;
+  background: none;
+  border: 0;
+  cursor: grab;
+}
+.ff-flo-bubble-body:focus-visible,
+.ff-flo-close:focus-visible,
+.ff-flo-toggle:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 0;
+}
+.ff-flo-sprite {
+  display: block;
+  image-rendering: pixelated;
 }
 /* In the narrow run panel the step tabs stay on one line and scroll sideways. */
 .ff-run-main .ff-tabs {

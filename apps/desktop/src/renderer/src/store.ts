@@ -25,12 +25,15 @@ interface AppState {
   approvals: ApprovalDto[];
   figma?: FigmaStatusDto;
   toast?: { kind: "error" | "info"; message: string };
+  /** Flo, the floating mascot window, is shown (undefined until settings load). */
+  floVisible?: boolean;
   navigate(screen: Screen): void;
   notify(kind: "error" | "info", message: string): void;
   clearToast(): void;
   refreshProjects(): Promise<void>;
   loadRun(runId: string): Promise<void>;
   refreshApprovals(): Promise<void>;
+  setFloVisible(visible: boolean): Promise<void>;
 }
 
 const MAX_EVENTS_PER_RUN = 8000;
@@ -66,6 +69,16 @@ export const useApp = create<AppState>((set, get) => ({
       get().notify("error", errorMessage(err));
     }
   },
+  async setFloVisible(visible) {
+    // Set first, so the push that follows is not mistaken for Flo hiding itself.
+    set({ floVisible: visible });
+    try {
+      set({ floVisible: (await api.invoke("settings:update", { showFlo: visible })).showFlo });
+    } catch (err) {
+      set({ floVisible: !visible });
+      get().notify("error", errorMessage(err));
+    }
+  },
 }));
 
 let wired = false;
@@ -80,6 +93,13 @@ export function wirePushEvents(): void {
   api.on("run:event", (event) => appendEvent(event));
   api.on("figma:status", (figma) => useApp.setState({ figma }));
   api.on("approval:requested", () => void useApp.getState().refreshApprovals());
+  // Flo's card was clicked in its floating window.
+  api.on("flo:open", ({ projectId, runId, nodeId }) => useApp.getState().navigate({ name: "run", projectId, runId, ...(nodeId ? { nodeId } : {}) }));
+  api.on("flo:visibility", ({ visible }) => {
+    const hidBySelf = !visible && useApp.getState().floVisible === true;
+    useApp.setState({ floVisible: visible });
+    if (hidBySelf) useApp.getState().notify("info", "Flo is hidden. Show it again with Show Flo in the sidebar.");
+  });
 }
 
 function appendEvent(event: EventDto): void {

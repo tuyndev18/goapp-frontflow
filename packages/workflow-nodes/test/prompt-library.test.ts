@@ -22,8 +22,8 @@ describe("PromptLibrary", () => {
     const retired = NODE_TYPES.filter((t) => t.retired && t.prompt && t.fixedId).map((t) => t.fixedId ?? "");
     expect(lib.list(FD)).toEqual([...aiSteps, ...retired].sort());
     for (const name of lib.list(FD)) expect(lib.get(name, FD).text.trim().length).toBeGreaterThan(50);
-    // Shipped empty: each step's prompt carries what it needs; an edit is appended to every AI step.
-    expect(lib.get(SYSTEM_PROMPT_NAME).text.trim()).toBe("");
+    // Shared by every AI step: FrontFlow hands over inputs and scope, the project decides how.
+    expect(lib.get(SYSTEM_PROMPT_NAME).text).toContain("theo chỉ dẫn và code của chính project");
     expect(stepsWithoutPrompt(definition, lib)).toEqual([]);
   });
 
@@ -130,16 +130,16 @@ describe("ProjectPromptStore", () => {
         { id: "b", title: "Off", text: "Ignored.", enabled: false },
         { id: "c", title: "", text: "No inline styles.", enabled: true },
       ]),
-    ).toBe("## Additional instructions for this project\n\n### Tokens\nUse tokens.\n\nNo inline styles.");
+    ).toBe("## Chỉ dẫn bổ sung của project\n\n### Tokens\nUse tokens.\n\nNo inline styles.");
   });
 
   it("appends the feature's additions after the project's", () => {
     const tokens = { id: "a", title: "Tokens", text: "Use tokens.", enabled: true };
     const modal = { id: "b", title: "", text: "The modal closes on Esc.", enabled: true };
     expect(additionsPrompt([tokens], [modal])).toBe(
-      "## Additional instructions for this project\n\n### Tokens\nUse tokens.\n\n## Additional instructions for this feature\n\nThe modal closes on Esc.",
+      "## Chỉ dẫn bổ sung của project\n\n### Tokens\nUse tokens.\n\n## Chỉ dẫn bổ sung của tính năng này\n\nThe modal closes on Esc.",
     );
-    expect(additionsPrompt([], [modal, { ...tokens, enabled: false }])).toBe("## Additional instructions for this feature\n\nThe modal closes on Esc.");
+    expect(additionsPrompt([], [modal, { ...tokens, enabled: false }])).toBe("## Chỉ dẫn bổ sung của tính năng này\n\nThe modal closes on Esc.");
   });
 });
 

@@ -18,6 +18,7 @@ import { formatDuration, interactiveTerminalId, stepDuration } from "../lib/acti
 import type { TranscriptItem } from "../lib/transcript.js";
 import type { Lane } from "../lib/groups.js";
 import { DocumentHistory, DocumentImportPanel, documentKindOf, FigmaHandoffPanel, type DocumentUpload } from "../components/StepInputs.js";
+import { StepIcon } from "../components/StepIcon.js";
 
 const TABS = ["Activity", "Prompt", "Result", "Files", "Tests", "Evidence", "Terminal"] as const;
 type Tab = (typeof TABS)[number];
@@ -119,8 +120,10 @@ export function StepDetail({
   const canRetry = nodeRun && ["failed", "blocked", "cancelled"].includes(nodeRun.status);
   // A finished step can run again, e.g. after its prompt was edited; the engine resets the steps after it.
   const canRunAgain = nodeRun?.status === "passed" || nodeRun?.status === "waiting_for_input";
-  const isGapGate = ["readiness.review", "readiness.ba_ui_review", "tests.design", "test.acceptance", "test.e2e"].includes(node.type);
+  // The UI step joins the gates when its agent changed no files: continue as it is, or run it again.
+  const isGapGate = ["ai.implement_ui", "readiness.review", "readiness.ba_ui_review", "tests.design", "test.acceptance", "test.e2e"].includes(node.type);
   const documentKind = documentKindOf(node.type);
+  const uploads = (nodeRun?.output as { history?: DocumentUpload[] } | undefined)?.history ?? [];
 
   return (
     <section className="ff-detail" aria-label={`Step ${node.label}`}>
@@ -148,7 +151,9 @@ export function StepDetail({
               </span>
             ) : null}
             {duration !== undefined ? <span className="ff-meta-item">⏱ {formatDuration(duration)}</span> : null}
-            <span className="ff-meta-item">{node.ai ? "🤖 AI CLI agent" : isManual ? "👤 Manual check" : "⚙ Automatic, no AI"}</span>
+            <span className="ff-meta-item">
+              <StepIcon name={node.ai ? "sparkles" : isManual ? "person" : "step"} size={14} /> {node.ai ? "AI CLI agent" : isManual ? "Manual check" : "Automatic, no AI"}
+            </span>
           </div>
           {node.description ? (
             <p className="ff-muted ff-detail-desc" title={node.description}>
@@ -189,17 +194,23 @@ export function StepDetail({
                 <FigmaHandoffPanel runId={runId} nodeId={node.id} />
               ) : isGapGate ? (
                 <div className="ff-actions">
-                  <button type="button" className="ff-btn ff-btn-primary" onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: { accept: true } }), "Gaps accepted")}>
-                    Accept gaps &amp; continue
+                  <button
+                    type="button"
+                    className="ff-btn ff-btn-primary"
+                    onClick={() => void act(() => api.invoke("runs:provideInput", { runId, nodeId: node.id, data: { accept: true } }), node.type === "ai.implement_ui" ? "Continuing with the UI as it is" : "Gaps accepted")}
+                  >
+                    {node.type === "ai.implement_ui" ? "Continue without changes" : "Accept gaps & continue"}
                   </button>
                   <span className="ff-muted ff-small">
-                    {node.type === "readiness.review"
-                      ? "or import a newer API contract in Read API contract; this review then runs again. See Result for the review."
-                      : node.type === "readiness.ba_ui_review"
-                        ? "to follow the choices the review proposes, or add your decisions as a feature prompt addition of this step (or import a newer BA) and run it again. See Result for the review."
-                        : node.type === "test.acceptance" || node.type === "test.e2e"
-                          ? "or fix what fails (BA, design or API) and run this step again. See Result for the test report."
-                          : "or import a newer BA specification in Read BA specification; test design then runs again. See Evidence for the gap report."}
+                    {node.type === "ai.implement_ui"
+                      ? "if the UI is already built, or fix the cause (e.g. open the GoApp Figma plugin window) and run this step again. See Evidence for the AI answer."
+                      : node.type === "readiness.review"
+                        ? "or import a newer API contract in Read API contract; this review then runs again. See Result for the review."
+                        : node.type === "readiness.ba_ui_review"
+                          ? "to follow the choices the review proposes, or add your decisions as a feature prompt addition of this step (or import a newer BA) and run it again. See Result for the review."
+                          : node.type === "test.acceptance" || node.type === "test.e2e"
+                            ? "or fix what fails (BA, design or API) and run this step again. See Result for the test report."
+                            : "or import a newer BA specification in Read BA specification; test design then runs again. See Evidence for the gap report."}
                   </span>
                 </div>
               ) : (
@@ -225,11 +236,21 @@ export function StepDetail({
             </div>
           ) : null}
   
+          {/* Folded to one line: re-uploading is occasional, the tabs below are what a finished step is read for. */}
           {documentKind && nodeRun && ["passed", "failed", "blocked"].includes(nodeRun.status) ? (
-            <div className="ff-callout">
-              <DocumentHistory uploads={(nodeRun.output as { history?: DocumentUpload[] } | undefined)?.history ?? []} />
+            <details className="ff-callout ff-doc-update">
+              <summary>
+                <StepIcon name="upload" size={16} /> Upload a newer version
+                {uploads.length ? (
+                  <span className="ff-muted ff-small">
+                    {" "}
+                    · {uploads.length} upload{uploads.length === 1 ? "" : "s"} so far
+                  </span>
+                ) : null}
+              </summary>
+              <DocumentHistory uploads={uploads} />
               <DocumentImportPanel runId={runId} nodeId={node.id} kind={documentKind} update />
-            </div>
+            </details>
           ) : null}
         </div>
       </div>
