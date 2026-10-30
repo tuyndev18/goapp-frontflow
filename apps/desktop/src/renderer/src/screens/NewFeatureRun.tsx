@@ -75,110 +75,115 @@ export function NewFeatureRun({ projectId }: { projectId: string }) {
           <p className="ff-muted">Give the feature a name and choose its workflow. The workflow asks for what it needs (Figma design, documents, your checks) in the steps that need them.</p>
         </div>
       </header>
-      <form
-        className="ff-form ff-card ff-new-feature"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-      >
-        <label className="ff-field">
-          <span>Feature name</span>
-          <input className="ff-input ff-input-lg" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Cancel order" autoFocus maxLength={200} />
-        </label>
-        <div className="ff-field">
-          <span>Workflow</span>
-          <div className="ff-workflow-choice" role="radiogroup" aria-label="Workflow">
-            {(workflows ?? []).map((w) => (
-              <button key={w.id} type="button" role="radio" aria-checked={workflowId === w.id} className={`ff-workflow-option${workflowId === w.id ? " ff-workflow-option-active" : ""}`} onClick={() => setWorkflowId(w.id)}>
-                <strong>{w.name}</strong>
-                <span className="ff-muted ff-small">
-                  {w.steps} steps{w.builtin ? " · built-in" : ""}
-                </span>
-                {w.description ? <span className="ff-small">{w.description}</span> : null}
+      <div className="ff-new-feature-layout">
+        <form
+          className="ff-form ff-card ff-new-feature"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <label className="ff-field">
+            <span>Feature name</span>
+            <input className="ff-input ff-input-lg" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Cancel order" autoFocus maxLength={200} />
+          </label>
+          <div className="ff-field">
+            <span>Workflow</span>
+            <div className="ff-workflow-choice" role="radiogroup" aria-label="Workflow">
+              {(workflows ?? []).map((w) => (
+                <button key={w.id} type="button" role="radio" aria-checked={workflowId === w.id} className={`ff-workflow-option${workflowId === w.id ? " ff-workflow-option-active" : ""}`} onClick={() => setWorkflowId(w.id)}>
+                  <strong>{w.name}</strong>
+                  <span className="ff-muted ff-small">
+                    {w.steps} steps{w.builtin ? " · built-in" : ""}
+                  </span>
+                  {w.description ? <span className="ff-small">{w.description}</span> : null}
+                </button>
+              ))}
+            </div>
+            <small className="ff-muted">
+              Change workflows, their prompts and skills in{" "}
+              <button type="button" className="ff-link" onClick={() => navigate({ name: "workflows" })}>
+                Workflows
               </button>
-            ))}
+              .
+            </small>
           </div>
-          <small className="ff-muted">
-            Change workflows, their prompts and skills in{" "}
-            <button type="button" className="ff-link" onClick={() => navigate({ name: "workflows" })}>
-              Workflows
-            </button>
-            .
-          </small>
-        </div>
-        {workflow?.missingPrompts.length ? (
-          <div className="ff-callout ff-callout-warning" role="alert">
-            <p>
-              <strong>⚠ Missing prompts:</strong> {workflow.missingPrompts.map((id) => workflow.nodes.find((n) => n.id === id)?.label ?? id).join(", ")}. Write them before starting this workflow.
-            </p>
-            <button type="button" className="ff-btn ff-btn-small" onClick={() => navigate({ name: "prompts", workflowId })}>
-              Open prompts
-            </button>
-          </div>
-        ) : null}
-        <div className="ff-field">
-          <span>Claude Code</span>
-          <div className="ff-agent-settings">
-            <div className="ff-agent-row">
-              <div className="ff-agent-text">
-                <span>Model</span>
-                <small>{modelChoice?.hint}</small>
-              </div>
-              <Menu
-                label="Switch model"
-                className="ff-btn ff-btn-small ff-agent-select"
-                trigger={<>{modelChoice?.label} ▾</>}
-                items={MODELS.map((m) => ({ label: m.label, hint: m.hint, checked: model === m.value, onSelect: () => setModel(m.value) }))}
-              />
+          {workflow?.missingPrompts.length ? (
+            <div className="ff-callout ff-callout-warning" role="alert">
+              <p>
+                <strong>⚠ Missing prompts:</strong> {workflow.missingPrompts.map((id) => workflow.nodes.find((n) => n.id === id)?.label ?? id).join(", ")}. Write them before starting this workflow.
+              </p>
+              <button type="button" className="ff-btn ff-btn-small" onClick={() => navigate({ name: "prompts", workflowId })}>
+                Open prompts
+              </button>
             </div>
-            <div className="ff-agent-row">
-              <div className="ff-agent-text">
-                <span id="ff-effort-label">Effort</span>
-                <small>{effortChoice?.hint}</small>
+          ) : null}
+          <div className="ff-field">
+            <span>Claude Code</span>
+            <div className="ff-agent-settings">
+              <div className="ff-agent-row">
+                <div className="ff-agent-text">
+                  <span>Model</span>
+                  <small>{modelChoice?.hint}</small>
+                </div>
+                <Menu
+                  label="Switch model"
+                  className="ff-btn ff-btn-small ff-agent-select"
+                  trigger={<>{modelChoice?.label} ▾</>}
+                  items={MODELS.map((m) => ({ label: m.label, hint: m.hint, checked: model === m.value, onSelect: () => setModel(m.value) }))}
+                />
               </div>
-              <div className="ff-agent-control">
-                <span className="ff-agent-value">{effortChoice?.label}</span>
-                <EffortSwitch levels={EFFORTS} value={effort} onChange={setEffort} labelledBy="ff-effort-label" />
+              <div className="ff-agent-row">
+                <div className="ff-agent-text">
+                  <span id="ff-effort-label">Effort</span>
+                  <small>{effortChoice?.hint}</small>
+                </div>
+                <div className="ff-agent-control">
+                  <span className="ff-agent-value">{effortChoice?.label}</span>
+                  <EffortSwitch levels={EFFORTS} value={effort} onChange={setEffort} labelledBy="ff-effort-label" />
+                </div>
               </div>
             </div>
+            <small className="ff-muted">Every AI step of this feature runs Claude Code in its terminal. Default uses the model and effort each step sets in the workflow (else Claude Code's own); a choice here applies to every AI step.</small>
           </div>
-          <small className="ff-muted">Every AI step of this feature runs Claude Code in its terminal. Default uses the model and effort each step sets in the workflow (else Claude Code's own); a choice here applies to every AI step.</small>
-        </div>
-        {workflowId !== FEATURE_DELIVERY ? (
-          workflow ? (
-            <ol className="ff-next-steps">
-              {workflow.lanes.map((lane) => {
-                const steps = workflow.nodes.filter((n) => (lane.groups ?? [lane.id]).includes(n.group ?? ""));
-                return steps.length ? (
-                  <li key={lane.id}>
-                    <strong>{lane.title}</strong> — {steps.map((n) => n.label).join(" → ")}
-                  </li>
-                ) : null;
-              })}
-            </ol>
-          ) : null
-        ) : (
-        <ol className="ff-next-steps">
-          <li>
-            <strong>Select Figma scope</strong> — push frames from the GoApp Figma plugin&apos;s FrontFlow button, then click Run: the AI agent builds the UI in your project right away
-          </li>
-          <li>
-            <strong>Read API contract</strong> — import it when it is ready (Markdown or OpenAPI); the built UI is then reviewed against it before the API is wired in
-          </li>
-          <li>
-            <strong>Read BA specification</strong> — import it any time; the API integration and UI states follow the UI cases it names, so they wait for it, and the acceptance tests are designed from it
-          </li>
-          <li>FrontFlow drives AI agents in your project folder: UI first, then API review, the BA and integration, then the acceptance tests and the report; you can follow every step live</li>
-        </ol>
-        )}
-        <div className="ff-actions">
-          <button type="submit" className="ff-btn ff-btn-primary" disabled={!title.trim() || submitting || !!workflow?.missingPrompts.length}>
-            {submitting ? "Creating…" : "Create feature"}
-          </button>
-          <span className="ff-muted ff-small">AI engine: Claude Code, in an interactive terminal session</span>
-        </div>
-      </form>
+          <div className="ff-actions">
+            <button type="submit" className="ff-btn ff-btn-primary" disabled={!title.trim() || submitting || !!workflow?.missingPrompts.length}>
+              {submitting ? "Creating…" : "Create feature"}
+            </button>
+            <span className="ff-muted ff-small">AI engine: Claude Code, in an interactive terminal session</span>
+          </div>
+        </form>
+        <aside className="ff-card ff-new-feature-aside" aria-label="How this feature runs">
+          <h2>How it runs</h2>
+          {workflowId !== FEATURE_DELIVERY ? (
+            workflow ? (
+              <ol className="ff-next-steps">
+                {workflow.lanes.map((lane) => {
+                  const steps = workflow.nodes.filter((n) => (lane.groups ?? [lane.id]).includes(n.group ?? ""));
+                  return steps.length ? (
+                    <li key={lane.id}>
+                      <strong>{lane.title}</strong> — {steps.map((n) => n.label).join(" → ")}
+                    </li>
+                  ) : null;
+                })}
+              </ol>
+            ) : null
+          ) : (
+          <ol className="ff-next-steps">
+            <li>
+              <strong>Select Figma scope</strong> — push frames from the GoApp Figma plugin&apos;s FrontFlow button, then click Run: the AI agent builds the UI in your project right away
+            </li>
+            <li>
+              <strong>Read API contract</strong> — import it when it is ready (Markdown or OpenAPI); the built UI is then reviewed against it before the API is wired in
+            </li>
+            <li>
+              <strong>Read BA specification</strong> — import it any time; the API integration and UI states follow the UI cases it names, so they wait for it, and the acceptance tests are designed from it
+            </li>
+            <li>FrontFlow drives AI agents in your project folder: UI first, then API review, the BA and integration, then the acceptance tests and the report; you can follow every step live</li>
+          </ol>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

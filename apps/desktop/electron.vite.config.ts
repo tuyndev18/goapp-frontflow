@@ -36,7 +36,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, "src/preload/index.ts") },
+        input: { index: resolve(__dirname, "src/preload/index.ts"), flo: resolve(__dirname, "src/preload/flo.ts") },
         output: { format: "cjs", entryFileNames: "[name].cjs" },
       },
     },
@@ -45,7 +45,9 @@ export default defineConfig({
     root: resolve(__dirname, "src/renderer"),
     plugins: [react()],
     build: {
-      rollupOptions: { input: { index: resolve(__dirname, "src/renderer/index.html") } },
+      // The CSP has no font-src, so fonts must stay files ('self'); small ones would otherwise be inlined as data: URIs.
+      assetsInlineLimit: (file) => (/\.(woff2?|ttf|otf)$/.test(file) ? false : undefined),
+      rollupOptions: { input: { index: resolve(__dirname, "src/renderer/index.html"), flo: resolve(__dirname, "src/renderer/flo.html") } },
     },
   },
 });

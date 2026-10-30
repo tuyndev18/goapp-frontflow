@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog.js";
 import { DeleteProjectDialog } from "../components/DeleteProjectDialog.js";
 import { Menu } from "../components/Menu.js";
 import { RunLanes, RunNowLine } from "../components/RunProgressLine.js";
+import { NavIcon } from "../components/NavIcon.js";
 import { runProgress, timeAgo } from "../lib/runProgress.js";
 
 const STACK_FIELDS = [
@@ -297,7 +298,7 @@ function RunGroup({ title, runs, now, onOpen, onDelete }: { title: string; runs:
                 </span>
               </button>
               <button type="button" className="ff-icon-btn" title="Delete run" aria-label={`Delete run ${r.title}`} onClick={() => onDelete(r)}>
-                🗑
+                <NavIcon name="trash" />
               </button>
             </li>
           );

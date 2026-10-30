@@ -65,7 +65,7 @@ describe("user-made workflow", () => {
     const sent = (name: string) => h!.artifacts.readText(h!.db.artifacts.listByRun(run.id).find((a) => a.name === name)!.id);
     const implementPrompt = sent("implement-attempt1.md");
     expect(implementPrompt).toMatch(
-      /^Implement Run t_\w+\.\n\n## Additional instructions for this project\n\n### Tokens\nUse the design tokens in src\/theme\.\n\n## Additional instructions for this feature\n\nOnly the cancel button changes\.$/,
+      /^Implement Run t_\w+\.\n\n## Chỉ dẫn bổ sung của project\n\n### Tokens\nUse the design tokens in src\/theme\.\n\n## Chỉ dẫn bổ sung của tính năng này\n\nOnly the cancel button changes\.$/,
     );
 
     // The summary the agent wrote is the step's result, for the next steps.

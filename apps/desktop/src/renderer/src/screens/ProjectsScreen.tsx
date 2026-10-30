@@ -5,6 +5,8 @@ import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { DeleteProjectDialog } from "../components/DeleteProjectDialog.js";
 import { RunLanes, RunNowLine } from "../components/RunProgressLine.js";
+import { NavIcon } from "../components/NavIcon.js";
+import { StepIcon } from "../components/StepIcon.js";
 import { runProgress, timeAgo } from "../lib/runProgress.js";
 
 export function ProjectsScreen() {
@@ -83,7 +85,7 @@ export function ProjectsScreen() {
       {projects.length === 0 ? (
         <div className="ff-empty">
           <div className="ff-empty-icon" aria-hidden="true">
-            📁
+            <StepIcon name="folder" size={32} />
           </div>
           <p>No projects yet. Open a local frontend project to detect its stack, commands and conventions.</p>
         </div>
@@ -125,7 +127,7 @@ export function ProjectsScreen() {
                 </span>
               </div>
               <button type="button" className="ff-icon-btn" aria-label={`Remove ${p.name}`} title="Remove project" onClick={() => setToDelete(p)}>
-                🗑
+                <NavIcon name="trash" />
               </button>
             </li>
           ))}

@@ -3,6 +3,7 @@ import type { FigmaStatusDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { ConfirmDialog } from "./ConfirmDialog.js";
+import { StepIcon } from "./StepIcon.js";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 /** Same limit as runs:importDocuments (MAX_UPLOAD_FILES). */
@@ -148,7 +149,7 @@ function FilePick({ label, hint, accept, files, onPick }: { label: string; hint:
   return (
     <label className={`ff-dropzone${files.length ? " ff-dropzone-filled" : ""}`}>
       <span className="ff-dropzone-icon" aria-hidden="true">
-        {files.length ? "📄" : "⬆"}
+        <StepIcon name={files.length ? "contract" : "upload"} size={22} />
       </span>
       <span className="ff-dropzone-text">
         <strong>{label}</strong>

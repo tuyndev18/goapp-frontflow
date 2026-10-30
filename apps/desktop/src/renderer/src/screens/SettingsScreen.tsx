@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
-import type { AppInfo, CliStatus, FigmaStatusDto, SettingsDto } from "../../../shared/ipc.js";
+import type { AppInfo, CliStatus, FigmaStatusDto, FloSize, SettingsDto } from "../../../shared/ipc.js";
 import { api, errorMessage } from "../api.js";
 import { useApp } from "../store.js";
 import { Loading } from "../components/Loading.js";
 
+const FLO_SIZES: { value: FloSize; label: string }[] = [
+  { value: "small", label: "Small (2×)" },
+  { value: "medium", label: "Medium (3×)" },
+  { value: "large", label: "Large (4×)" },
+];
+
 export function SettingsScreen() {
   const notify = useApp((s) => s.notify);
+  // Flo can also be hidden from its own window or the sidebar, so its switch reads the shared state.
+  const floVisible = useApp((s) => s.floVisible);
+  const setFloVisible = useApp((s) => s.setFloVisible);
   const [settings, setSettings] = useState<SettingsDto>();
   const [info, setInfo] = useState<AppInfo>();
   const [clis, setClis] = useState<CliStatus[]>([]);
@@ -130,6 +139,37 @@ export function SettingsScreen() {
           ) : (
             <p>⚠ Not found. Build go-figma and add it to Claude Code from the plugin&apos;s MCP panel, or enter the path above.</p>
           )}
+        </section>
+
+        <section className="ff-card">
+          <h2>Flo</h2>
+          <div className="ff-setting ff-setting-check">
+            <label className="ff-checkbox">
+              <input type="checkbox" checked={floVisible ?? settings.showFlo} onChange={(e) => void setFloVisible(e.target.checked)} />
+              <span>Show Flo, the pixel mascot that shows what the run is doing. Drag it anywhere on screen, inside or outside the app.</span>
+            </label>
+          </div>
+          <div className="ff-setting">
+            <div className="ff-setting-text">
+              <label htmlFor="set-flo-size">Size</label>
+              <p>Flo and its speech bubble frame, in whole pixel steps so the pixel art stays sharp.</p>
+            </div>
+            <select
+              id="set-flo-size"
+              className="ff-input"
+              value={settings.floSize}
+              onChange={(e) => {
+                const size = FLO_SIZES.find((s) => s.value === e.target.value)?.value;
+                if (size) void update({ floSize: size });
+              }}
+            >
+              {FLO_SIZES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </section>
 
         <section className="ff-card">

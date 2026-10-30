@@ -3,12 +3,19 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, session, shell, type WebContents } from "electron";
 import { registerIpcHandlers, PushBus } from "./ipc-gateway.js";
 import { createServices, type Services } from "./services.js";
+import { FloWindow } from "./flo-window.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const DEV_URL = process.env["ELECTRON_RENDERER_URL"];
 
 let services: Services | undefined;
+let mainWindow: BrowserWindow | undefined;
 const bus = new PushBus();
+
+function loadPage(win: BrowserWindow, page: string): void {
+  if (DEV_URL) void win.loadURL(page === "index.html" ? DEV_URL : `${DEV_URL}/${page}`);
+  else void win.loadFile(join(here, "../renderer", page));
+}
 
 function isTrustedSender(sender: WebContents, frameUrl: string): boolean {
   if (BrowserWindow.fromWebContents(sender) === null) return false;
@@ -50,23 +57,50 @@ function createWindow(): BrowserWindow {
     return { action: "deny" };
   });
 
-  if (DEV_URL) void win.loadURL(DEV_URL);
-  else void win.loadFile(join(here, "../renderer/index.html"));
+  loadPage(win, "index.html");
+  mainWindow = win;
+  // Flo floats outside the app window, so it would otherwise keep the app alive after it closes.
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = undefined;
+    flo?.destroy();
+  });
   return win;
+}
+
+let flo: FloWindow | undefined;
+
+function openFromFlo(target: { projectId: string; runId: string; nodeId?: string }): void {
+  const win = mainWindow ?? createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  bus.send("flo:open", target);
 }
 
 app.whenReady().then(async () => {
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
   const dataDir = process.env["FRONTFLOW_DATA_DIR"] ?? join(app.getPath("userData"), "goapp-frontflow");
-  services = await createServices({ dataDir, bus, runnerEntry: join(here, "runner.js") });
+  flo = new FloWindow({
+    dataDir,
+    preload: join(here, "../preload/flo.cjs"),
+    load: loadPage,
+    anchor: () => mainWindow?.getBounds(),
+    onOpen: openFromFlo,
+  });
+  services = await createServices({ dataDir, bus, runnerEntry: join(here, "runner.js"), flo });
   registerIpcHandlers(services.handlers, isTrustedSender);
   createWindow();
+  const { showFlo, floSize } = await services.handlers["settings:get"]();
+  flo.setSize(floSize);
+  flo.setVisible(showFlo);
   // Spec DoD #9: resume runs that were active before the app restarted.
   void services.recover();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (mainWindow) return;
+    createWindow();
+    if (services) void Promise.resolve(services.handlers["settings:get"]()).then((s) => flo?.setVisible(s.showFlo));
   });
 });
 

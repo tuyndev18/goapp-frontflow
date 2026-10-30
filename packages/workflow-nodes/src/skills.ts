@@ -353,17 +353,17 @@ export function skillsPrompt(skills: Skill[]): { text: string; truncated: string
     const limit = Math.min(MAX_SKILL_CHARS, Math.max(budget, 0));
     let body = skill.body.trim();
     if (body.length > limit) {
-      body = `${body.slice(0, limit)}\n…(truncated: read the rest in ${join(skill.dir, SKILL_FILE)})`;
+      body = `${body.slice(0, limit)}\n…(đã cắt bớt: đọc phần còn lại trong ${join(skill.dir, SKILL_FILE)})`;
       truncated.push(skill.name);
     }
     budget -= body.length;
-    const files = skill.files.length ? `\nFiles in this skill's folder: ${skill.files.join(", ")}` : "";
-    return `<skill name="${skill.name}" folder="${skill.dir}">\nDescription: ${skill.description}${files}\n\n${body.replace(/<\/skill>/gi, "</skill_>")}\n</skill>`;
+    const files = skill.files.length ? `\nFile trong thư mục skill: ${skill.files.join(", ")}` : "";
+    return `<skill name="${skill.name}" folder="${skill.dir}">\nMô tả: ${skill.description}${files}\n\n${body.replace(/<\/skill>/gi, "</skill_>")}\n</skill>`;
   });
   const text = [
-    "## Skills for this step",
-    "The user attached these skills to this workflow step. Read them before you start and apply them wherever they fit the task. The task above and the API contract take precedence when a skill conflicts with them; mention any such conflict in your final answer.",
-    "Paths a skill mentions relative to itself (templates, scripts, references) are inside its folder: read them from there and never edit the skill folder.",
+    "## Skill của bước này",
+    "User đã gắn các skill này vào bước workflow. Đọc chúng trước khi bắt đầu và áp dụng ở chỗ phù hợp với nhiệm vụ. Khi skill mâu thuẫn với nhiệm vụ ở trên hoặc API contract thì nhiệm vụ và contract được ưu tiên; nêu mâu thuẫn đó trong câu trả lời cuối.",
+    "Đường dẫn tương đối mà skill nhắc tới (template, script, tài liệu tham khảo) nằm trong thư mục của skill: đọc từ đó và không bao giờ sửa thư mục skill.",
     ...blocks,
   ].join("\n\n");
   return { text, truncated };

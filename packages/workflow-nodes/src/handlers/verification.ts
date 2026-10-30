@@ -4,6 +4,7 @@ import { reportStep, type ReportJudgement, type ReportOutput } from "../ai-step.
 import { failedGates, runGates, type GateResult } from "../gates.js";
 import type { NodeServices } from "../services.js";
 import { featureOf, knownScripts, optionalUpstream, plural, profileOf, projectOf, runInputs, saveArtifact, upstream, workspaceOf } from "../util.js";
+import { notesOf } from "./ai.js";
 import { checkpointRun, requireGitProject } from "./project.js";
 import { opsGuideOf, type TestDesignOutput } from "./test-design.js";
 
@@ -102,7 +103,7 @@ async function acceptanceTests(
     fileName: options.fileName,
     label: options.label,
     cwd: workspace.projectPath,
-    vars: { feature: featureOf(input), testDesign: tests.reportPath, opsGuide: opsGuideOf(input), ...options.vars },
+    vars: { feature: featureOf(input), testDesign: tests.reportPath, opsGuide: opsGuideOf(input), integrationNotes: notesOf(input, "B2.api_binding"), testNotes: notesOf(input, "C2.generate_tests"), ...options.vars },
     allowedCommands: knownScripts(profile),
     gate: {
       judge: judgeAcceptance,

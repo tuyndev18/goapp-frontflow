@@ -181,7 +181,7 @@ export function buildTranscript(events: EventDto[], nodeRuns: NodeRun[]): Transc
         break;
       }
       case "node.artifact":
-        note("📎", `Saved ${str("label") ?? str("kind") ?? "artifact"}`, "muted", { verbose: true });
+        note("⎘", `Saved ${str("label") ?? str("kind") ?? "artifact"}`, "muted", { verbose: true });
         break;
       case "session.started":
         note("✳", `Claude session started${str("model") ? ` · ${str("model")}` : ""}`, "ai", { verbose: true });
@@ -194,7 +194,7 @@ export function buildTranscript(events: EventDto[], nodeRuns: NodeRun[]): Transc
         break;
       case "test.result": {
         const failed = Number(p["failed"] ?? 0);
-        note("🧪", `${str("suite")}: ${p["passed"]} passed, ${failed} failed, ${p["skipped"]} skipped`, failed ? "danger" : "success");
+        note("⚗", `${str("suite")}: ${p["passed"]} passed, ${failed} failed, ${p["skipped"]} skipped`, failed ? "danger" : "success");
         break;
       }
     }

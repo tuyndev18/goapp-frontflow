@@ -31,7 +31,7 @@ export function buildActivity(events: EventDto[], nodeRuns: NodeRun[]): Activity
     if (!line) continue;
     // Merge consecutive AI text from the same step into one paragraph.
     const prev = lines.at(-1);
-    if (event.type === "message.delta" && prev && prev.icon === "💬" && prev.nodeId === nodeId) {
+    if (event.type === "message.delta" && prev && prev.icon === "❯" && prev.nodeId === nodeId) {
       prev.text = clip(`${prev.text}${line.text}`);
       continue;
     }
@@ -115,13 +115,13 @@ function describe(event: EventDto, nodeId: string | undefined): ActivityLine | u
       return { ...base, icon, text: clip(message), tone, verbose: level === "debug" };
     }
     case "node.artifact":
-      return { ...base, icon: "📎", text: `Saved ${str("label") ?? str("kind") ?? "artifact"}`, tone: "muted", verbose: true };
+      return { ...base, icon: "⎘", text: `Saved ${str("label") ?? str("kind") ?? "artifact"}`, tone: "muted", verbose: true };
     case "session.started":
-      return { ...base, icon: "🤖", text: `AI session started${str("model") ? ` (${str("model")})` : ""}`, tone: "ai" };
+      return { ...base, icon: "✳", text: `AI session started${str("model") ? ` (${str("model")})` : ""}`, tone: "ai" };
     case "message.delta":
-      return str("role") === "assistant" && str("text")?.trim() ? { ...base, icon: "💬", text: clip(str("text")!), tone: "ai" } : undefined;
+      return str("role") === "assistant" && str("text")?.trim() ? { ...base, icon: "❯", text: clip(str("text")!), tone: "ai" } : undefined;
     case "tool.started":
-      return { ...base, icon: "🔧", text: describeTool(str("name") ?? "tool", p["input"]), tone: "ai" };
+      return { ...base, icon: "⚙", text: describeTool(str("name") ?? "tool", p["input"]), tone: "ai" };
     case "tool.completed":
       return p["ok"] === false ? { ...base, icon: "✕", text: `${str("name") ?? "Tool"} failed`, tone: "danger" } : undefined;
     case "file.changed":
@@ -130,10 +130,10 @@ function describe(event: EventDto, nodeId: string | undefined): ActivityLine | u
       return { ...base, icon: "⚠", text: `Approval required: ${str("action") ?? ""}`, tone: "warning" };
     case "test.result": {
       const failed = Number(p["failed"] ?? 0);
-      return { ...base, icon: "🧪", text: `${str("suite")}: ${p["passed"]} passed, ${failed} failed, ${p["skipped"]} skipped`, tone: failed ? "danger" : "success" };
+      return { ...base, icon: "⚗", text: `${str("suite")}: ${p["passed"]} passed, ${failed} failed, ${p["skipped"]} skipped`, tone: failed ? "danger" : "success" };
     }
     case "session.completed":
-      return { ...base, icon: "🤖", text: "AI session finished", tone: "ai" };
+      return { ...base, icon: "✳", text: "AI session finished", tone: "ai" };
     case "session.failed":
       return { ...base, icon: "✕", text: `AI session failed: ${str("message") ?? str("code") ?? ""}`, tone: "danger" };
     default:

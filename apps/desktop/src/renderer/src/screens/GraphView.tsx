@@ -25,6 +25,7 @@ import { useApp } from "../store.js";
 import { formatDuration, formatTime, stepDuration, type ActivityLine } from "../lib/activity.js";
 import { lanesOf, laneFor, nodeColor, type Lane } from "../lib/groups.js";
 import { stepLook } from "../lib/steps.js";
+import { StepIcon } from "../components/StepIcon.js";
 import { useTheme } from "../lib/theme.js";
 
 /** n8n-style step: a square card with the icon, the name and one line underneath. */
@@ -199,9 +200,6 @@ export function GraphView({
       <header className="ff-canvas-head">
         <h3>Workflow canvas</h3>
         <div className="ff-canvas-key" aria-label="How to read the canvas">
-          <span className="ff-canvas-progress">
-            {graph.nodes.filter((n) => ["passed", "skipped"].includes(latest.get(n.id)?.status ?? "")).length}/{graph.nodes.length} steps done
-          </span>
           <span>
             <i className="ff-key-input" aria-hidden="true" /> needs your input
           </span>
@@ -267,7 +265,8 @@ export function GraphView({
             <LaneHeaders lanes={lanes} />
             <MiniMap
               className="ff-minimap"
-              position="bottom-left"
+              // Bottom-left would cover the sticky lane titles.
+              position="bottom-right"
               pannable
               zoomable
               ariaLabel="Workflow overview"
@@ -425,7 +424,7 @@ const StepNode = memo(function StepNode({ id, data }: NodeProps<Node<FlowNodeDat
       <Handle type="target" position={Position.Left} isConnectable={false} style={{ ...handleY, left: inset }} />
       <div className="ff-gnode-card" style={{ width: CARD, height: CARD }}>
         <span className="ff-gnode-icon" aria-hidden="true">
-          {look.icon}
+          <StepIcon name={look.icon} />
         </span>
         <span className={`ff-gnode-status${spec.animated ? " ff-spin" : ""}`} aria-label={spec.label}>
           {spec.icon}

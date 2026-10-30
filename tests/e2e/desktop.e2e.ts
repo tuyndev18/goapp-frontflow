@@ -196,7 +196,8 @@ test("feature workflow: create by name, push Figma, import into steps, follow li
     await page.getByRole("button", { name: /Cancel order/ }).click();
     await expect(runStatus(page)).toHaveAttribute("aria-label", /Completed with assumptions/);
 
-    await page.getByRole("button", { name: "Delete run" }).click();
+    await page.getByRole("button", { name: "More run actions" }).click();
+    await page.getByRole("menuitem", { name: /Delete run/ }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete run" }).click();
     await expect(page.getByRole("heading", { name: "sample-app" })).toBeVisible();
     await expect(page.getByText("No runs yet.")).toBeVisible();

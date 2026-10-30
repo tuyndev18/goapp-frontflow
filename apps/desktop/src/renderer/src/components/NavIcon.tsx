@@ -28,6 +28,14 @@ const PATHS = {
     </>
   ),
   plus: <path d="M8 3v10M3 8h10" />,
+  // Flo's browser-window head.
+  flo: (
+    <>
+      <rect x="2.5" y="2.5" width="11" height="9" rx="1.2" />
+      <path d="M2.5 5h11M6.2 7.5v1.2M9.8 7.5v1.2M6 13.5h4" />
+    </>
+  ),
+  trash: <path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.7 8.3a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L12 4.5M6.7 7v4M9.3 7v4" />,
   run: <path d="M5 3.5v9l7-4.5z" />,
   settings: (
     <>

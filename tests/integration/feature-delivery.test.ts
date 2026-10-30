@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkflowDefinition } from "@frontflow/workflow-engine";
@@ -90,13 +90,28 @@ describe("feature delivery workflow", () => {
     expect(prompt("B2.ba_ui_review-attempt1.md")).toContain(scenarios.reportPath);
     expect(prompt("B2.ba_ui_review-attempt1.md")).toContain("FILEKEY123");
     expect(prompt("B2.ba_ui_review-attempt1.md")).toContain("123:456");
+    // The UI's provisional design choices (its final answer) reach the review that resolves them.
+    expect(byId.get("B1.implement_ui")?.output).toMatchObject({ answerPath: join(runDir, "B1.implement_ui-answer.md") });
+    expect(existsSync(join(runDir, "B1.implement_ui-answer.md"))).toBe(true);
+    expect(prompt("B2.ba_ui_review-attempt1.md")).toContain(join(runDir, "B1.implement_ui-answer.md"));
     expect(prompt("B2.ba_ui_review-attempt1.md")).not.toContain("{{");
     expect(prompt("B2.api_binding-attempt1.md")).toContain(baReview.reportPath);
+    // The integration builds what the review lists: the original BA for exact wording, the frames it cites.
+    expect(prompt("B2.api_binding-attempt1.md")).toContain(join(runDir, "ba-spec"));
+    expect(prompt("B2.api_binding-attempt1.md")).toContain("123:456");
     expect(prompt("C1.test_design-attempt1.md")).toContain(baReview.reportPath);
     const design = byId.get("C1.test_design")?.output as { reportPath: string; report: string; verdict: string };
     expect(design).toMatchObject({ reportPath: join(runDir, "test-design.md"), verdict: "enough" });
     expect(design.report).toContain("TC-BA-ORDER-002-01");
     expect(prompt("C2.generate_tests-attempt1.md")).toContain(design.reportPath);
+    // The integration's known gaps reach the test steps, which report them instead of working around them.
+    const integrationNotes = join(runDir, "B2.api_binding-answer.md");
+    for (const step of ["C2.generate_tests", "C2.run_tests", "C2.run_e2e"]) {
+      expect(prompt(`${step}-attempt1.md`)).toContain(integrationNotes);
+      expect(prompt(`${step}-attempt1.md`)).not.toContain("{{");
+    }
+    // The failures the test generation reported reach the steps that fix them.
+    for (const step of ["C2.run_tests", "C2.run_e2e"]) expect(prompt(`${step}-attempt1.md`)).toContain(join(runDir, "C2.generate_tests-answer.md"));
 
     const artifacts = h.db.artifacts.listByRun(run.id);
     const evidence = byId.get("C2.evidence_report")?.output as { reportPath: string; report: string };
@@ -182,6 +197,28 @@ describe("feature delivery workflow", () => {
     if (!uiStates) throw new Error("no B2.ui_states prompt");
     expect(h.artifacts.readText(uiStates.id)).toContain(join(h.dataDir, "projects", h.projectId, "runs", run.id, "files", "ba-scenarios.md"));
   }, 240_000);
+
+  it("waits when the UI step changed no files and continues with the project as it is when accepted", async () => {
+    h = await createHarness({ aiFixture: "cancel-order" });
+    // The agent ends without changing anything, as when it cannot read the design.
+    mkdirSync(join(h.dataDir, "prompts", "feature-delivery"), { recursive: true });
+    writeFileSync(join(h.dataDir, "prompts", "feature-delivery", "B1.implement_ui.md"), "Build {{feature}} from {{figma}}. scenario:noop\n");
+    const engine = h.newEngine();
+    const run = await engine.startRun({ projectId: h.projectId, definition: h.definition, inputs: h.createRunInputs({ importLater: true }) });
+    let state = await engine.waitForRun(run.id);
+    const ui = () => state.nodes.find((n) => n.nodeId === "B1.implement_ui");
+    expect(ui()?.status).toBe("waiting_for_input");
+    expect(ui()?.blockerSummary).toContain("changed no files");
+
+    await engine.provideInput(run.id, "B1.implement_ui", { accept: true });
+    state = await engine.waitForRun(run.id);
+    expect(ui()).toMatchObject({ status: "passed", assumed: true });
+    const answerPath = join(h.dataDir, "projects", h.projectId, "runs", run.id, "files", "B1.implement_ui-answer.md");
+    expect(ui()?.output).toMatchObject({ filesChanged: [], answerPath });
+    expect(readFileSync(answerPath, "utf8")).toContain("Stopped without changes");
+    // The agent ran once: continuing does not run it again.
+    expect(h.db.artifacts.listByRun(run.id).filter((a) => a.name.startsWith("B1.implement_ui-attempt")).map((a) => a.name)).toEqual(["B1.implement_ui-attempt1.md"]);
+  }, 120_000);
 
   it("waits when the review does not conclude Đủ and continues with that review when gaps are accepted", async () => {
     // No canned AI answers: the agent never writes the review file, only a final reply with no conclusion.

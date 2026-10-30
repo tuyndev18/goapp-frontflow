@@ -129,7 +129,7 @@ describe("skillsPrompt", () => {
       { name: "b", description: "Big", body: "x".repeat(70_000), files: [], dir: "/lib/b", updatedAt: "" },
     ]);
     expect(text).toContain('<skill name="a" folder="/lib/a">');
-    expect(text).toContain("Files in this skill's folder: templates/x.mjs");
+    expect(text).toContain("File trong thư mục skill: templates/x.mjs");
     expect(truncated).toEqual(["b"]);
     expect(text.length).toBeLessThan(70_000);
   });
@@ -182,7 +182,7 @@ describe("agent steps with skills", () => {
     const result = await runAgentStep(ctx, services, { projectId: "p1", adapterId: "fake", cwd: root, prompt: "Build the UI", readOnly: false });
 
     expect(result.resultText).toBe("done");
-    expect(started[0]!.prompt.startsWith("Build the UI\n\n## Skills for this step")).toBe(true);
+    expect(started[0]!.prompt.startsWith("Build the UI\n\n## Skill của bước này")).toBe(true);
     expect(started[0]!.prompt).toContain("Use one service per feature.");
     expect(logs.some((l) => /^Skills: react-page \([0-9a-f]{8}\)$/.test(l))).toBe(true);
     expect(existsSync(path.join(root, "skills", "react-page", "SKILL.md"))).toBe(true);

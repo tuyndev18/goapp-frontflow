@@ -6,6 +6,7 @@
 //   success  init, text, Bash + Write tool calls (file really written in cwd), result
 //   approval approval_request → waits for {"type":"approval_response",...} on stdin
 //   fail     is_error result, exit 1
+//   noop     answers without changing any file (e.g. could not read the design)
 //   slow     streams text until killed
 //   crash    exits abruptly mid-stream (code 3)
 //   leak     prints secret env vars to stdout/stderr, then behaves like success
@@ -157,10 +158,10 @@ async function runTurn(prompt) {
   await sleep(10);
 
   // Canned answers for FrontFlow's analysis steps: when the prompt asks to write a Markdown or JSON
-  // file ("Write <path>.md: …", an absolute path in the run folder or one relative to the project)
-  // and $FAKE_CLI_OUTPUTS_DIR has a file with that name, "write" it like a real agent would.
+  // file ("Write <path>.md: …" or the Vietnamese "Ghi <path>.md …", an absolute path in the run folder
+  // or one relative to the project) and $FAKE_CLI_OUTPUTS_DIR has a file with that name, "write" it like a real agent would.
   const outputsDir = process.env.FAKE_CLI_OUTPUTS_DIR;
-  const requested = /\bWrite (?:the result to )?`?([^`\s]+\.(?:json|md))`?/.exec(prompt)?.[1];
+  const requested = /\b(?:Write|Ghi) (?:the result to )?`?([^`\s]+\.(?:json|md))`?/.exec(prompt)?.[1];
   if (outputsDir && scenario === "success" && requested) {
     const source = path.join(outputsDir, path.basename(requested));
     if (existsSync(source)) {
@@ -174,6 +175,9 @@ async function runTurn(prompt) {
     case "fail":
       result("Simulated failure", true);
       await drainAndExit(1);
+      return;
+    case "noop":
+      result(`Stopped without changes (prompt #${promptCount})`);
       return;
     case "crash":
       process.stdout.write('{"type":"assistant","message":{"content":[{"type":"te', () => process.exit(3));
