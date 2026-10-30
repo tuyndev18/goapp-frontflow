@@ -19,7 +19,8 @@ type View = "step" | "system" | "project" | "feature";
  * terminals); a manual check's prompt is the checklist shown to the person. The user edits it here
  * per workflow; the edit applies the next time the step runs (Retry or Run again reruns it).
  * `{{placeholders}}` are filled in by the step with its inputs. In a running feature, only that
- * feature's additions can be edited here; shared workflow prompts are edited in workflow settings.
+ * feature's additions can be edited here; the shared step prompt is shown read-only below them and
+ * edited on the Prompts screen.
  */
 export function PromptEditor({
   workflowId,
@@ -39,6 +40,7 @@ export function PromptEditor({
   onSaved?(): void;
 }) {
   const notify = useApp((s) => s.notify);
+  const navigate = useApp((s) => s.navigate);
   const [view, setView] = useState<View>(runId ? "feature" : "step");
   const [prompt, setPrompt] = useState<PromptDto>();
   const [text, setText] = useState("");
@@ -55,9 +57,11 @@ export function PromptEditor({
 
   useEffect(() => setView(runId ? "feature" : "step"), [workflowId, nodeId, runId]);
   const additions = view === "project" || view === "feature";
+  // In a feature the step prompt is still loaded, to show what the agent runs before the feature's instructions.
+  const loadsPrompt = !additions || view === "feature";
 
   useEffect(() => {
-    if (additions) return;
+    if (!loadsPrompt) return;
     let live = true;
     setPrompt(undefined);
     api.invoke("prompts:get", isSystem ? { name: SYSTEM } : { workflowId, name: nodeId }).then(
@@ -71,7 +75,7 @@ export function PromptEditor({
     return () => {
       live = false;
     };
-  }, [view, workflowId, nodeId, notify]);
+  }, [view, workflowId, nodeId, notify, loadsPrompt]);
 
   async function act(fn: () => Promise<PromptDto>, done: string) {
     setBusy(true);
@@ -105,7 +109,27 @@ export function PromptEditor({
         {!additions && prompt?.defaultText ? prompt.customized ? <span className="ff-tag ff-tag-warn">edited</span> : <span className="ff-tag">default</span> : null}
       </div>
       {additions && projectId ? (
-        <PromptAdditions key={view} projectId={projectId} {...(view === "feature" && runId ? { runId } : {})} workflowId={workflowId} nodeId={nodeId} />
+        <>
+          <PromptAdditions key={view} projectId={projectId} {...(view === "feature" && runId ? { runId } : {})} workflowId={workflowId} nodeId={nodeId} />
+          {view === "feature" ? (
+            <section className="ff-stack" aria-label={`Prompt of ${label}`}>
+              <div className="ff-row">
+                <strong className="ff-small">Step prompt</strong>
+                {prompt?.defaultText ? prompt.customized ? <span className="ff-tag ff-tag-warn">edited</span> : <span className="ff-tag">default</span> : null}
+                <span className="ff-grow" />
+                <button type="button" className="ff-btn ff-btn-small" onClick={() => navigate({ name: "prompts", workflowId, nodeId })}>
+                  Edit in Prompts →
+                </button>
+              </div>
+              <p className="ff-muted ff-small">What the agent runs in this step, shared by every feature of this workflow. This feature&apos;s instructions above are sent after it.</p>
+              {prompt === undefined ? (
+                <Loading label="Loading prompt" />
+              ) : (
+                <textarea className="ff-input ff-mono ff-prompt-text" aria-label={`Prompt of ${label} (read-only)`} value={prompt.text} readOnly spellCheck={false} rows={18} />
+              )}
+            </section>
+          ) : null}
+        </>
       ) : (
         <>
           <p className="ff-muted ff-small">
